@@ -1,0 +1,5 @@
+// Heurística propuesta: Presión de Desbalance Observado (PDO), activada tras el primer conflicto.
+// P/N cuentan watches expuestos; con m>=2n se usan las longitudes de ambas listas para evitar recorrerlas.
+// S(v)=(1+a)*(P+N)*(1+((P-N)/(1+P+N))^2); la fase falsifica el lado de mayor presión.
+// Solo ordena decisiones: la propagación y las cláusulas derivadas por 1UIP conservan la lógica de CDCL.
+// No demuestra una mejora asintótica ni novedad bibliográfica; la reducción de trabajo debe medirse.
