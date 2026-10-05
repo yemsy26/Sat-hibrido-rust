@@ -8,10 +8,11 @@ fn run_case(name: &str, n: usize, formula: Formula, expected_sat: bool, compare_
     assert_eq!(serial.model.is_some(), expected_sat);
     if let Some(model) = &serial.model { assert!(verify_model(&formula, model)); }
     let serial_status = if serial.model.is_some() { "SAT" } else { "UNSAT" };
-    println!("{name},serial,{n},{},{serial_status},{serial_ms:.6},{:.6},{},{},{},{},{:.6},1,0,0,0,0,0,0,0,0,0,1.000000,0,0.0000",
+    println!("{name},serial,{n},{},{serial_status},{serial_ms:.6},{:.6},{},{},{},{},{:.6},1,0,0,0,0,0,0,0,0,0,1.000000,0,0.0000,{},{},{:.6}",
         formula.len(), serial.cdcl_ms, serial.cdcl.decisions,
         serial.cdcl.conflicts, serial.cdcl.reignitions, serial.cdcl.reignition_flips,
-        serial.cdcl.reignition_ms);
+        serial.cdcl.reignition_ms, serial.symmetry.generators, serial.symmetry.clauses,
+        serial.symmetry.ms);
     let mut no_share_decisions = None;
     for share_enabled in [false, true] {
         if !share_enabled && !compare_sharing { continue; }
@@ -32,14 +33,15 @@ fn run_case(name: &str, n: usize, formula: Formula, expected_sat: bool, compare_
         let mode = if share_enabled { "parallel_shared" } else { "parallel_private" };
         let speedup = serial_ms / elapsed_ms.max(f64::MIN_POSITIVE);
         // Trabajo total real: no se presupone que compartir reduzca decisiones o tiempo.
-        println!("{name},{mode},{n},{},{status},{elapsed_ms:.6},{:.6},{},{},{},{},{:.6},{},{},{},{},{},{},{},{},{},{},{speedup:.6},{},{reduction}",
+        println!("{name},{mode},{n},{},{status},{elapsed_ms:.6},{:.6},{},{},{},{},{:.6},{},{},{},{},{},{},{},{},{},{},{speedup:.6},{},{reduction},{},{},{:.6}",
             formula.len(), report.conquer_ms,
             total.decisions, total.conflicts, total.reignitions, total.reignition_flips,
             total.reignition_ms, stats.workers, stats.cubes_generated, stats.cubes_started,
             stats.cubes_unsat, stats.cubes_cancelled,
             total.exported_clauses, total.imported_clauses, total.dropped_exports,
             total.import_backjumps, stats.shared_clauses.len(),
-            no_share_decisions.map_or_else(|| "NA".to_owned(), |value| value.to_string()));
+            no_share_decisions.map_or_else(|| "NA".to_owned(), |value| value.to_string()),
+            report.symmetry.generators, report.symmetry.clauses, report.symmetry.ms);
     }
 }
 
@@ -72,7 +74,7 @@ fn pigeonhole_3sat(pigeons: usize, holes: usize) -> (usize, Formula) {
 }
 
 fn main() {
-    println!("case,mode,n,clauses,status,elapsed_ms,conquer_ms,decisions,conflicts,reignitions,reignition_flips,reignition_ms,workers,cubes_generated,cubes_started,cubes_unsat,cubes_cancelled,exports,imports,sharing_drops,import_backjumps,pool_clauses,speedup_vs_serial,private_decisions,decision_reduction_vs_private_pct");
+    println!("case,mode,n,clauses,status,elapsed_ms,conquer_ms,decisions,conflicts,reignitions,reignition_flips,reignition_ms,workers,cubes_generated,cubes_started,cubes_unsat,cubes_cancelled,exports,imports,sharing_drops,import_backjumps,pool_clauses,speedup_vs_serial,private_decisions,decision_reduction_vs_private_pct,symmetry_generators,symmetry_clauses,symmetry_ms");
     run_case("empty_formula", 0, vec![], true, false);
     run_case("contradictory_units", 1, vec![vec![1], vec![-1]], false, false);
     for n in [10_i32, 100, 1000] {

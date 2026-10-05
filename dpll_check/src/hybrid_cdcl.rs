@@ -1,4 +1,5 @@
 use std::collections::{HashSet, VecDeque};
+use super::proof::ProofLog;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
@@ -16,9 +17,6 @@ pub struct SolveStats {
     pub restarts: usize,
     pub deleted_clauses: usize,
     pub database_reductions: usize,
-    pub symmetry_rows: usize,
-    pub symmetry_columns: usize,
-    pub symmetry_clauses: usize,
     pub reignitions: usize,
     pub reignition_flips: usize,
     pub reignition_ms: f64,
@@ -254,189 +252,8 @@ struct SearchControl<'a, 'p> {
     cube: &'a [u32],
     cancel: Option<&'a AtomicBool>,
     sharing: Option<&'a mut Sharing<'p>>,
-}
-// Certificado estructural completo: no se infieren simetrías por frecuencias.
-fn inject_pigeonhole_symmetry(formula: &mut Formula, variables: &[u32]) -> (usize, usize, usize) {
-    use std::collections::{BTreeMap, BTreeSet};
-    #[derive(Clone, Copy, Default)]
-    struct Occurrence {
-        positive_count: usize,
-        negative_count: usize,
-        positive_clause: usize,
-        negative_clause: usize,
-    }
-    fn find(parent: &mut [usize], mut variable: usize) -> usize {
-        while parent[variable] != variable {
-            parent[variable] = parent[parent[variable]];
-            variable = parent[variable];
-        }
-        variable
-    }
-    let variable_index = |literal: i32| {
-        variables.binary_search(&literal.unsigned_abs()).expect("Indexed variable")
-    };
-    let mut occurrences = vec![Occurrence::default(); variables.len()];
-    for (clause, literals) in formula.iter().enumerate() {
-        for &literal in literals {
-            let occurrence = &mut occurrences[variable_index(literal)];
-            if literal > 0 {
-                occurrence.positive_count += 1;
-                occurrence.positive_clause = clause;
-            } else {
-                occurrence.negative_count += 1;
-                occurrence.negative_clause = clause;
-            }
-        }
-    }
-    let auxiliary: Vec<bool> = occurrences.iter().map(|occurrence| {
-        occurrence.positive_count == 1
-            && occurrence.negative_count == 1
-            && occurrence.positive_clause != occurrence.negative_clause
-            && formula[occurrence.positive_clause].len() == 3
-            && formula[occurrence.negative_clause].len() == 3
-    }).collect();
-    let mut consumed = vec![false; formula.len()];
-    let mut rows = Vec::new();
-    for source in 0..formula.len() {
-        if !formula[source].iter().all(|&literal| literal > 0) {
-            continue;
-        }
-        let mut row = Vec::new();
-        let mut current = source;
-        let mut incoming = None;
-        loop {
-            if consumed[current] {
-                return (0, 0, 0);
-            }
-            consumed[current] = true;
-            let mut next = None;
-            let mut negative_count = 0;
-            for &literal in &formula[current] {
-                let variable = variable_index(literal);
-                if literal < 0 {
-                    negative_count += 1;
-                    if Some(variable) != incoming {
-                        return (0, 0, 0);
-                    }
-                } else if auxiliary[variable] {
-                    if next.replace(variable).is_some() {
-                        return (0, 0, 0);
-                    }
-                } else {
-                    row.push(variable);
-                }
-            }
-            if negative_count != usize::from(incoming.is_some()) {
-                return (0, 0, 0);
-            }
-            let Some(variable) = next else { break };
-            // (C|y)&(-y|D) equivale a C|D al proyectar el auxiliar privado y.
-            current = occurrences[variable].negative_clause;
-            incoming = Some(variable);
-        }
-        rows.push(row);
-    }
-    let pigeons = rows.len();
-    let holes = rows.first().map_or(0, Vec::len);
-    if pigeons < 2 || holes < 2 || rows.iter().any(|row| row.len() != holes) {
-        return (0, 0, 0);
-    }
-    let mut owner = vec![usize::MAX; variables.len()];
-    for (row_index, row) in rows.iter().enumerate() {
-        for &variable in row {
-            if owner[variable] != usize::MAX {
-                return (0, 0, 0);
-            }
-            owner[variable] = row_index;
-        }
-    }
-    let mut parent: Vec<usize> = (0..variables.len()).collect();
-    let mut degree = vec![0_usize; variables.len()];
-    let mut edges = BTreeSet::new();
-    for (index, clause) in formula.iter().enumerate() {
-        if consumed[index] {
-            continue;
-        }
-        if clause.len() != 2 || clause.iter().any(|&literal| literal >= 0) {
-            return (0, 0, 0);
-        }
-        let a = variable_index(clause[0]);
-        let b = variable_index(clause[1]);
-        if owner[a] == usize::MAX || owner[b] == usize::MAX || owner[a] == owner[b] {
-            return (0, 0, 0);
-        }
-        if !edges.insert((a.min(b), a.max(b))) {
-            return (0, 0, 0);
-        }
-        degree[a] += 1;
-        degree[b] += 1;
-        let first = find(&mut parent, a);
-        let second = find(&mut parent, b);
-        parent[first.max(second)] = first.min(second);
-    }
-    let mut columns: BTreeMap<usize, Vec<usize>> = BTreeMap::new();
-    for variable in 0..variables.len() {
-        if owner[variable] == usize::MAX {
-            continue;
-        }
-        if degree[variable] != pigeons - 1 {
-            return (0, 0, 0);
-        }
-        columns.entry(find(&mut parent, variable)).or_default().push(variable);
-    }
-    if columns.len() != holes {
-        return (0, 0, 0);
-    }
-    let mut matrix = vec![vec![0_i32; holes]; pigeons];
-    for (column_index, column) in columns.values().enumerate() {
-        if column.len() != pigeons {
-            return (0, 0, 0);
-        }
-        let mut present = vec![false; pigeons];
-        for &variable in column {
-            let row = owner[variable];
-            if present[row] {
-                return (0, 0, 0);
-            }
-            present[row] = true;
-            matrix[row][column_index] = variables[variable] as i32;
-        }
-        // p nodos distintos, grado p-1 y una celda por fila certifican K_p.
-    }
-    // L literales, V variables: reconocimiento O(L*V + L*log(L));
-    // se añaden O(p*h^2) cláusulas y ninguna variable nueva.
-    let before = formula.len();
-    // PHP solo exige al menos una celda por fila: borrar otras celdas verdaderas
-    // preserva sus cláusulas. Así se selecciona primero un modelo funcional.
-    for row in &matrix {
-        for first in 0..holes {
-            for second in first + 1..holes {
-                formula.push(vec![-row[first], -row[second]]);
-            }
-        }
-    }
-    // Las permutaciones de filas son simetrías del PHP proyectado certificado.
-    // Orden estricto de las columnas elegidas: c[r] < c[r+1].
-    for row in 0..pigeons - 1 {
-        for first in 0..holes {
-            for second in 0..=first {
-                formula.push(vec![-matrix[row][first], -matrix[row + 1][second]]);
-            }
-        }
-    }
-    // Consecuencias del orden: c[r]>=r; si p<=h, c[r]<=h-p+r.
-    // Para p=h+1, la última fila queda falsa y BCP cierra en nivel cero.
-    for (row_index, row) in matrix.iter().enumerate() {
-        for &literal in &row[..row_index.min(holes)] {
-            formula.push(vec![-literal]);
-        }
-        if pigeons <= holes {
-            for &literal in &row[holes - pigeons + row_index + 1..] {
-                formula.push(vec![-literal]);
-            }
-        }
-    }
-    (pigeons, holes, formula.len() - before)
+    // Traza DRAT de la búsqueda en serie; el enjambre no la emite.
+    proof: Option<&'a mut dyn ProofLog>,
 }
 // Pesos enteros de probSAT, 2^16 * 2.06^(-roturas): cuanto más rompe un flip, menos probable.
 const BREAK_WEIGHTS: [u64; 16] =
@@ -1391,7 +1208,7 @@ impl State {
         signed_model(variables, walker.best_values.iter().copied())
     }
     // Candidatas: aprendidas con LBD > 2 que no son razón ni se usaron desde la última reducción.
-    fn reduce_database(&mut self) {
+    fn reduce_database(&mut self, mut proof: Option<(&mut (dyn ProofLog + '_), &[u32])>) {
         debug_assert_eq!(self.head, self.trail.len());
         // Intervalo aritmético: la base retenida crece con la raíz del número de conflictos.
         self.cleanup_interval += CLEANUP_INTERVAL;
@@ -1423,8 +1240,15 @@ impl State {
                 .then_with(|| a.cmp(&b))
         });
         let remove_count = (candidates.len() / 2).max(1);
+        let mut line: Vec<i32> = Vec::new();
         for &reference in &candidates[..remove_count] {
             self.arena[reference + 1] |= GARBAGE;
+            // Una razón vigente nunca es candidata: lo borrado no sostiene ninguna unidad.
+            if let Some((log, variables)) = proof.as_mut() {
+                let start = reference + HEADER;
+                external(variables, &self.arena[start..start + self.arena[reference] as usize], &mut line);
+                log.delete(&line);
+            }
         }
         // La arena vieja guarda la nueva referencia de cada superviviente en su palabra de flags.
         let mut old = std::mem::take(&mut self.arena);
@@ -1466,7 +1290,7 @@ fn active(config: Option<ReignitionConfig>) -> Option<ReignitionConfig> {
         configuration.interval != 0 && configuration.oracle.flips_per_variable != 0
     })
 }
-fn prepare_formula(mut formula: Formula, oracle: Option<OracleConfig>) -> Option<(State, Vec<u32>)> {
+fn prepare_formula(formula: &[Vec<i32>], oracle: Option<OracleConfig>) -> Option<(State, Vec<u32>)> {
     if formula.iter().any(Vec::is_empty) {
         return None;
     }
@@ -1478,18 +1302,12 @@ fn prepare_formula(mut formula: Formula, oracle: Option<OracleConfig>) -> Option
     variables.dedup();
     // Literales y referencias comparten 31 bits; NO_REASON queda fuera de ambos rangos.
     assert!(variables.len() < 1 << 30, "Too many variables");
-    // La canonización precede a cualquier supuesto de un cubo.
-    let (symmetry_rows, symmetry_columns, symmetry_clauses) =
-        inject_pigeonhole_symmetry(&mut formula, &variables);
-    let mut state = State::new(variables.len(), SolveStats {
-        symmetry_rows, symmetry_columns, symmetry_clauses,
-        ..SolveStats::default()
-    });
+    let mut state = State::new(variables.len(), SolveStats::default());
     let mut packed: Vec<u32> = Vec::new();
     // Copia plana para el oráculo; las unidades le llegan después por el trail raíz.
     let mut walk_literals = Vec::new();
     let mut walk_offsets = vec![0_u32];
-    for clause in &formula {
+    for clause in formula {
         packed.clear();
         packed.extend(clause.iter().map(|&literal| {
             let variable = variables.binary_search(&literal.unsigned_abs())
@@ -1528,25 +1346,43 @@ fn prepare_formula(mut formula: Formula, oracle: Option<OracleConfig>) -> Option
     state.queue.search = state.queue.last;
     Some((state, variables))
 }
+// Literales internos a identificadores DIMACS, para las líneas de la traza.
+fn external(variables: &[u32], clause: &[u32], line: &mut Vec<i32>) {
+    line.clear();
+    line.extend(clause.iter().map(|&literal| {
+        let id = variables[(literal >> 1) as usize] as i32;
+        if literal & 1 == 0 { id } else { -id }
+    }));
+}
 pub fn solve_cdcl(formula: &[Vec<i32>]) -> (Option<Vec<i32>>, SolveStats) {
-    solve_cdcl_inner(formula, None)
+    solve_cdcl_inner(formula, None, None)
+}
+// Igual que `solve_cdcl_with_reignition`, registrando cada cláusula aprendida o borrada.
+// Toda cláusula aprendida es RUP; un resultado UNSAT termina con la cláusula vacía.
+pub fn solve_cdcl_with_proof(
+    formula: &[Vec<i32>],
+    config: ReignitionConfig,
+    proof: &mut dyn ProofLog,
+) -> (Option<Vec<i32>>, SolveStats) {
+    solve_cdcl_inner(formula, Some(config), Some(proof))
 }
 pub fn solve_cdcl_with_reignition(
     formula: &[Vec<i32>],
     config: ReignitionConfig,
 ) -> (Option<Vec<i32>>, SolveStats) {
-    solve_cdcl_inner(formula, Some(config))
+    solve_cdcl_inner(formula, Some(config), None)
 }
 fn solve_cdcl_inner(
     formula: &[Vec<i32>],
     config: Option<ReignitionConfig>,
+    proof: Option<&mut dyn ProofLog>,
 ) -> (Option<Vec<i32>>, SolveStats) {
     let feedback = active(config);
-    let prepared = prepare_formula(formula.to_vec(), feedback.map(|configuration| configuration.oracle));
+    let prepared = prepare_formula(formula, feedback.map(|configuration| configuration.oracle));
     let Some((mut state, variables)) = prepared else {
         return (None, SolveStats { conflicts: 1, ..SolveStats::default() });
     };
-    let control = SearchControl { cube: &[], cancel: None, sharing: None };
+    let control = SearchControl { cube: &[], cancel: None, sharing: None, proof };
     let (outcome, stats) = run_state(&mut state, &variables, feedback, control);
     match outcome {
         SearchOutcome::Sat(model) => (Some(model), stats),
@@ -1588,7 +1424,14 @@ fn search(
         return SearchOutcome::Cancelled;
     }
     // El certificado raiz evita reprocesar una cola contradictoria y cubos posteriores.
-    if state.root_unsat { return SearchOutcome::Unsat; }
+    if state.root_unsat {
+        // Dos unidades opuestas de la fórmula: la cláusula vacía es RUP.
+        if let Some(proof) = control.proof.as_deref_mut() {
+            proof.add(&[]);
+        }
+        return SearchOutcome::Unsat;
+    }
+    let mut line: Vec<i32> = Vec::new();
     if let Some(link) = control.sharing.as_deref_mut() {
         // Un cubo empieza en el nivel 0: mismo punto de sincronización que un restart.
         if state.level() == 0 {
@@ -1611,9 +1454,16 @@ fn search(
             if level == 0 {
                 // No se publica la cláusula vacía ni se confunde cancelación con UNSAT.
                 state.root_unsat = true;
+                if let Some(proof) = control.proof.as_deref_mut() {
+                    proof.add(&[]);
+                }
                 return SearchOutcome::Unsat;
             }
             let (backjump_level, lbd) = state.analyze(conflict);
+            if let Some(proof) = control.proof.as_deref_mut() {
+                external(variables, &state.learned, &mut line);
+                proof.add(&line);
+            }
             if lbd <= EXPORT_LBD {
                 if let Some(link) = control.sharing.as_deref_mut() {
                     // Los cubos son decisiones: toda cláusula aprendida es consecuencia global.
@@ -1627,7 +1477,7 @@ fn search(
             continue;
         }
         if state.conflicts >= state.next_cleanup {
-            state.reduce_database();
+            state.reduce_database(control.proof.as_deref_mut().map(|proof| (proof, variables)));
         }
         if let Some(configuration) = feedback {
             // Ignición inicial: primer fixpoint de la búsqueda, todavía en el nivel 0.
@@ -1740,7 +1590,7 @@ fn swarm_worker(
         }
         // Clausulas, unidades raiz, fases, actividades y oraculo sobreviven al cubo.
         state.stats = SolveStats::default();
-        let control = SearchControl { cube, cancel: Some(cancel), sharing: link.as_mut() };
+        let control = SearchControl { cube, cancel: Some(cancel), sharing: link.as_mut(), proof: None };
         let (outcome, stats) = run_state(&mut state, variables, feedback, control);
         report.total.add_search(stats);
         match outcome {
@@ -1759,7 +1609,7 @@ fn swarm_worker(
 pub fn solve_swarm(formula: &[Vec<i32>], config: SwarmConfig) -> (Option<Vec<i32>>, SwarmStats) {
     let mut stats = SwarmStats::default();
     let feedback = active(Some(config.reignition));
-    let prepared = prepare_formula(formula.to_vec(), feedback.map(|configuration| configuration.oracle));
+    let prepared = prepare_formula(formula, feedback.map(|configuration| configuration.oracle));
     let Some((mut base, variables)) = prepared else {
         stats.total.conflicts = 1;
         return (None, stats);
@@ -1837,7 +1687,7 @@ mod deterministic_import_tests {
     fn published_consequence_is_imported_and_promoted_to_root() {
         // (x1 OR x2) AND (x1 OR !x2) entails x1 without a syntactic unit.
         let formula = vec![vec![1, 2], vec![1, -2]];
-        let (mut state, variables) = prepare_formula(formula.clone(), None).unwrap();
+        let (mut state, variables) = prepare_formula(&formula, None).unwrap();
         let positive_x1 = 0;
 
         let pool = CloudPool::new(8);
@@ -1858,7 +1708,7 @@ mod deterministic_import_tests {
         }
 
         let mut link = Sharing::new(&pool, 0, 1);
-        let control = SearchControl { cube: &[], cancel: None, sharing: Some(&mut link) };
+        let control = SearchControl { cube: &[], cancel: None, sharing: Some(&mut link), proof: None };
         let (outcome, stats) = run_state(&mut state, &variables, None, control);
         let model = match outcome {
             SearchOutcome::Sat(model) => model,
@@ -1875,7 +1725,7 @@ mod deterministic_import_tests {
         // Siguiente cubo del mismo worker: cursor y filtro sobreviven, nada se reimporta.
         state.backjump(0);
         state.stats = SolveStats::default();
-        let control = SearchControl { cube: &[], cancel: None, sharing: Some(&mut link) };
+        let control = SearchControl { cube: &[], cancel: None, sharing: Some(&mut link), proof: None };
         let (_, stats) = run_state(&mut state, &variables, None, control);
         assert_eq!(stats.imported_clauses, 0);
         // Un lote nunca vuelve a su autor.

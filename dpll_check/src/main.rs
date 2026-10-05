@@ -1,12 +1,1517 @@
-// Fase 13: chasis CDCL con oraculo discreto (probSAT) que reescribe las fases en los restarts.
-// Los cubos son decisiones; cada worker conserva su aprendizaje, su intercambio y su oraculo.
+// Fase 15: traza DRAT del nucleo CDCL y de la capa de paridad, con las capas de la Fase 14.
+// El CDCL no reconoce ninguna familia: las capas leen la formula y solo le anaden clausulas.
 // El oraculo solo escribe fases; SAT verifica la formula original. Compartir no garantiza mejoras.
-// Medicion local 3-SAT n=250: con oraculo, SAT 7x mas rapido y UNSAT un 28% mas lento.
+// Medicion local PHP 10/9 sin simetria: 2.92 s sin traza y 2.95 s con ella (20 MB en texto).
 #![forbid(unsafe_code)]
 #![deny(warnings)]
 
+pub mod proof {
+// Trazas DRAT. Cada línea añade una cláusula que es RUP respecto de las anteriores, o RAT
+// sobre su primer literal, o borra una cláusula ya presente. El motor solo escribe; la
+// comprobación corresponde a un verificador externo (drat-trim, que además produce LRAT
+// para un verificador certificado).
+use std::io::{self, Write};
+
+pub trait ProofLog {
+    fn add(&mut self, clause: &[i32]);
+    fn delete(&mut self, clause: &[i32]);
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ProofFormat {
+    Text,
+    Binary,
+}
+
+// Una llamada al sistema por cada 64 KiB de traza, no por cláusula.
+const FLUSH_AT: usize = 1 << 16;
+
+pub struct Proof<W: Write> {
+    sink: W,
+    buffer: Vec<u8>,
+    format: ProofFormat,
+    additions: u64,
+    deletions: u64,
+    bytes: u64,
+    error: Option<io::Error>,
+}
+impl<W: Write> Proof<W> {
+    pub fn new(sink: W, format: ProofFormat) -> Self {
+        Self {
+            sink, format,
+            buffer: Vec::with_capacity(FLUSH_AT + 4096),
+            additions: 0, deletions: 0, bytes: 0, error: None,
+        }
+    }
+    pub fn additions(&self) -> u64 {
+        self.additions
+    }
+    pub fn deletions(&self) -> u64 {
+        self.deletions
+    }
+    // Bytes ya entregados al destino más los que esperan en el búfer.
+    pub fn bytes(&self) -> u64 {
+        self.bytes + self.buffer.len() as u64
+    }
+    fn line(&mut self, clause: &[i32], deletion: bool) {
+        match self.format {
+            ProofFormat::Text => {
+                if deletion {
+                    self.buffer.extend_from_slice(b"d ");
+                }
+                for &literal in clause {
+                    if literal < 0 {
+                        self.buffer.push(b'-');
+                    }
+                    let mut digits = [0_u8; 10];
+                    let mut value = literal.unsigned_abs();
+                    let mut start = digits.len();
+                    loop {
+                        start -= 1;
+                        digits[start] = b'0' + (value % 10) as u8;
+                        value /= 10;
+                        if value == 0 {
+                            break;
+                        }
+                    }
+                    self.buffer.extend_from_slice(&digits[start..]);
+                    self.buffer.push(b' ');
+                }
+                self.buffer.extend_from_slice(b"0\n");
+            }
+            ProofFormat::Binary => {
+                // DRAT binario: 'a' o 'd', literales 2|x| + signo en base 128, y un cero.
+                self.buffer.push(if deletion { b'd' } else { b'a' });
+                for &literal in clause {
+                    let mut code = 2 * u64::from(literal.unsigned_abs()) + u64::from(literal < 0);
+                    while code >= 128 {
+                        self.buffer.push((code & 127) as u8 | 128);
+                        code >>= 7;
+                    }
+                    self.buffer.push(code as u8);
+                }
+                self.buffer.push(0);
+            }
+        }
+        if self.buffer.len() >= FLUSH_AT {
+            self.drain();
+        }
+    }
+    fn drain(&mut self) {
+        if self.error.is_none() {
+            if let Err(error) = self.sink.write_all(&self.buffer) {
+                self.error = Some(error);
+            }
+        }
+        self.bytes += self.buffer.len() as u64;
+        self.buffer.clear();
+    }
+    // Entrega lo pendiente y devuelve el destino; un error de escritura invalida la traza.
+    pub fn finish(mut self) -> io::Result<W> {
+        self.drain();
+        if let Some(error) = self.error {
+            return Err(error);
+        }
+        self.sink.flush()?;
+        Ok(self.sink)
+    }
+}
+impl<W: Write> ProofLog for Proof<W> {
+    fn add(&mut self, clause: &[i32]) {
+        self.additions += 1;
+        self.line(clause, false);
+    }
+    fn delete(&mut self, clause: &[i32]) {
+        self.deletions += 1;
+        self.line(clause, true);
+    }
+}
+
+}
+
+pub mod parity {
+// Inprocessing: extracción de paridad y eliminación de Gauss-Jordan sobre GF(2).
+//
+// Corrección. Una ecuación x1 ⊕ ... ⊕ xk = b se extrae solo cuando la fórmula contiene sus
+// 2^(k-1) cláusulas; la conjunción de esas cláusulas equivale a la ecuación, luego F la
+// implica. Toda combinación lineal de ecuaciones implicadas está implicada, así que cada
+// fila de la forma reducida es consecuencia de F y añadirla conserva exactamente sus
+// modelos. Una fila 0 = 1 demuestra que F es insatisfacible. Las filas largas se expresan
+// con variables auxiliares definidas (t = a ⊕ b): es una extensión conservadora, con los
+// mismos modelos sobre las variables originales.
+//
+// Certificación. Con una traza DRAT, cada fila se deriva sumando una a una las ecuaciones
+// originales que la componen. Toda restricción vive en forma de cadena: un literal por
+// prefijo, definido por RAT, y una unidad sobre el último. La suma de dos cadenas avanza
+// variable a variable con lemas RUP de tres literales, así que la traza crece linealmente
+// con el soporte y no exponencialmente. Lo que no cabe en el presupuesto no se inyecta.
+use super::proof::ProofLog;
+
+pub type Clause = Vec<i32>;
+
+#[derive(Clone, Debug, Default)]
+pub struct ParityReduction {
+    // Consecuencias lineales en CNF; se añaden a la fórmula.
+    pub clauses: Vec<Clause>,
+    pub equations: usize,
+    pub rank: usize,
+    pub units: usize,
+    pub equivalences: usize,
+    // Variables nuevas, con identificadores por encima de todos los originales.
+    pub auxiliaries: usize,
+    pub refuted: bool,
+}
+
+// La reducción es opcional: cualquier tope solo la debilita, nunca compromete la corrección.
+const MAX_ARITY: usize = 8;
+const DIRECT_ARITY: usize = 4;
+const ELIMINATION_WORK: u64 = 1 << 31;
+const INJECTION_FACTOR: usize = 4;
+const INJECTION_FLOOR: usize = 1024;
+const PROOF_BUDGET: usize = 1 << 21;
+
+// Ecuación sobre índices de variable en orden creciente: su XOR vale `1`.
+type Equation = (Vec<u32>, bool);
+
+// Fila reducida, las ecuaciones originales cuya suma la produce y el ancho de su componente.
+struct Row {
+    equation: Equation,
+    sources: Vec<u32>,
+    width: usize,
+}
+
+fn mix(mut value: u64) -> u64 {
+    value = value.wrapping_add(0x9e37_79b9_7f4a_7c15);
+    value = (value ^ (value >> 30)).wrapping_mul(0xbf58_476d_1ce4_e5b9);
+    value = (value ^ (value >> 27)).wrapping_mul(0x94d0_49bb_1331_11eb);
+    value ^ (value >> 31)
+}
+
+// Una cláusula con n negaciones prohíbe la asignación con n unos, de paridad n. La ecuación
+// de término b prohíbe las asignaciones de paridad distinta de b: sus cláusulas son todas
+// las de ese soporte cuyo número de negaciones tiene paridad 1 - b.
+fn extract(ids: &[u32], formula: &[Clause]) -> Vec<Equation> {
+    // Con identificadores densos basta una tabla directa; si no, búsqueda binaria.
+    let dense = ids.last().is_some_and(|&last| last as usize <= 4 * ids.len() + 1024);
+    let mut table = vec![0_u32; if dense { ids[ids.len() - 1] as usize + 1 } else { 0 }];
+    for (index, &id) in ids.iter().enumerate().take(if dense { ids.len() } else { 0 }) {
+        table[id as usize] = index as u32;
+    }
+    // Cláusulas candidatas en un arreglo plano, con la huella de su soporte para agruparlas.
+    let mut offsets = vec![0_u32];
+    let mut literals: Vec<u32> = Vec::new();
+    let mut keys: Vec<(u64, u32)> = Vec::new();
+    let mut packed: Vec<u32> = Vec::new();
+    for clause in formula {
+        if clause.len() > 2 * MAX_ARITY {
+            continue;
+        }
+        packed.clear();
+        packed.extend(clause.iter().map(|&literal| {
+            let variable = if dense {
+                table[literal.unsigned_abs() as usize]
+            } else {
+                ids.binary_search(&literal.unsigned_abs()).expect("Variable was indexed") as u32
+            };
+            (variable << 1) | u32::from(literal < 0)
+        }));
+        packed.sort_unstable();
+        packed.dedup();
+        if packed.len() > MAX_ARITY || packed.windows(2).any(|pair| pair[0] ^ 1 == pair[1]) {
+            continue;
+        }
+        let support = packed.iter().fold(packed.len() as u64, |print, &literal| {
+            mix(print ^ u64::from(literal >> 1))
+        });
+        keys.push((support, keys.len() as u32));
+        literals.extend_from_slice(&packed);
+        offsets.push(literals.len() as u32);
+    }
+    keys.sort_unstable();
+    let clause = |index: u32| &literals[offsets[index as usize] as usize..offsets[index as usize + 1] as usize];
+    let same_support = |first: u32, second: u32| {
+        let (first, second) = (clause(first), clause(second));
+        first.len() == second.len() && first.iter().zip(second).all(|(a, b)| a >> 1 == b >> 1)
+    };
+    let mut equations: Vec<Equation> = Vec::new();
+    let mut pending: Vec<u32> = Vec::new();
+    let mut group: Vec<u32> = Vec::new();
+    let mut seen: Vec<bool> = Vec::new();
+    let mut start = 0;
+    while start < keys.len() {
+        let mut end = start + 1;
+        while end < keys.len() && keys[end].0 == keys[start].0 {
+            end += 1;
+        }
+        // Misma huella no garantiza mismo soporte: se compara antes de agrupar.
+        pending.clear();
+        pending.extend(keys[start..end].iter().map(|&(_, index)| index));
+        while let Some(&leader) = pending.first() {
+            group.clear();
+            let mut kept = 0;
+            for position in 0..pending.len() {
+                if same_support(leader, pending[position]) {
+                    group.push(pending[position]);
+                } else {
+                    pending[kept] = pending[position];
+                    kept += 1;
+                }
+            }
+            pending.truncate(kept);
+            let arity = clause(leader).len();
+            let half = 1_usize << (arity - 1);
+            if group.len() < half {
+                continue;
+            }
+            // Patrones de signo presentes, separados por su número de negaciones.
+            seen.clear();
+            seen.resize(2 * half, false);
+            let mut present = [0_usize; 2];
+            for &member in &group {
+                let pattern = clause(member).iter().enumerate()
+                    .fold(0_usize, |pattern, (bit, &literal)| pattern | ((literal & 1) as usize) << bit);
+                if !seen[pattern] {
+                    seen[pattern] = true;
+                    present[pattern.count_ones() as usize & 1] += 1;
+                }
+            }
+            let variables: Vec<u32> = clause(leader).iter().map(|&literal| literal >> 1).collect();
+            for negations in 0..2 {
+                if present[negations] == half {
+                    equations.push((variables.clone(), negations == 0));
+                }
+            }
+        }
+        start = end;
+    }
+    equations
+}
+
+// Matriz densa por filas de palabras de 64 bits. Tras las columnas de variables va el
+// término independiente y, si se pide, una identidad que recuerda qué filas se sumaron.
+struct Matrix {
+    words: usize,
+    columns: usize,
+    data: Vec<u64>,
+}
+impl Matrix {
+    fn bit(&self, row: usize, column: usize) -> bool {
+        self.data[row * self.words + column / 64] >> (column % 64) & 1 == 1
+    }
+    fn set(&mut self, row: usize, column: usize) {
+        self.data[row * self.words + column / 64] ^= 1 << (column % 64);
+    }
+    // Gauss-Jordan: cada columna pivote queda con un único uno. Devuelve el rango.
+    fn eliminate(&mut self, rows: usize) -> usize {
+        let words = self.words;
+        let mut pivot_row = vec![0_u64; words];
+        let mut rank = 0;
+        for column in 0..self.columns {
+            let Some(found) = (rank..rows).find(|&row| self.bit(row, column)) else { continue; };
+            for word in 0..words {
+                self.data.swap(found * words + word, rank * words + word);
+            }
+            pivot_row.copy_from_slice(&self.data[rank * words..(rank + 1) * words]);
+            for row in 0..rows {
+                if row != rank && self.bit(row, column) {
+                    for (target, &source) in self.data[row * words..(row + 1) * words].iter_mut().zip(&pivot_row) {
+                        *target ^= source;
+                    }
+                }
+            }
+            rank += 1;
+        }
+        rank
+    }
+}
+
+// Forma reducida de un componente conexo. `Err` lleva las ecuaciones que suman 0 = 1.
+fn reduce(
+    component: &[Equation],
+    offset: usize,
+    track: bool,
+    derived: &mut Vec<Row>,
+    rank: &mut usize,
+) -> Result<(), Vec<u32>> {
+    let mut columns: Vec<u32> = component.iter().flat_map(|(variables, _)| variables.iter().copied()).collect();
+    columns.sort_unstable();
+    columns.dedup();
+    let rows = component.len();
+    let value_column = columns.len();
+    let words = (value_column + 1 + if track { rows } else { 0 }) / 64 + 1;
+    // Un componente demasiado grande se deja como está: solo se pierde inferencia.
+    if (rows as u64).saturating_mul(rows as u64).saturating_mul(words as u64) > ELIMINATION_WORK {
+        return Ok(());
+    }
+    let mut matrix = Matrix { words, columns: columns.len(), data: vec![0; rows * words] };
+    for (row, (variables, value)) in component.iter().enumerate() {
+        for variable in variables {
+            matrix.set(row, columns.binary_search(variable).expect("Column was indexed"));
+        }
+        if *value {
+            matrix.set(row, value_column);
+        }
+        if track {
+            matrix.set(row, value_column + 1 + row);
+        }
+    }
+    let independent = matrix.eliminate(rows);
+    *rank += independent;
+    let sources = |row: usize| -> Vec<u32> {
+        if !track {
+            return Vec::new();
+        }
+        (0..rows).filter(|&source| matrix.bit(row, value_column + 1 + source))
+            .map(|source| (offset + source) as u32).collect()
+    };
+    // Tras el rango no quedan variables: un término independiente a uno es 0 = 1.
+    if let Some(row) = (independent..rows).find(|&row| matrix.bit(row, value_column)) {
+        return Err(sources(row));
+    }
+    let mut known: Vec<&Equation> = component.iter().collect();
+    known.sort_unstable();
+    for row in 0..independent {
+        let variables: Vec<u32> = (0..columns.len()).filter(|&column| matrix.bit(row, column))
+            .map(|column| columns[column]).collect();
+        let equation = (variables, matrix.bit(row, value_column));
+        // Una fila que ya era una ecuación de la fórmula no aporta nada nuevo.
+        if known.binary_search(&&equation).is_err() {
+            derived.push(Row { equation, sources: sources(row), width: columns.len() });
+        }
+    }
+    Ok(())
+}
+
+// CNF de x1 ⊕ ... ⊕ xk = b: una cláusula por patrón de signos con paridad 1 - b.
+fn encode(variables: &[i32], value: bool, clauses: &mut Vec<Clause>) {
+    for pattern in 0..1_u32 << variables.len() {
+        if (pattern.count_ones() & 1 == 1) != value {
+            clauses.push(variables.iter().enumerate().map(|(bit, &variable)| {
+                if pattern >> bit & 1 == 1 { -variable } else { variable }
+            }).collect());
+        }
+    }
+}
+
+// Restricción en forma de cadena: `links[i]` vale la paridad de las primeras i + 1
+// variables (el primero es la propia variable) y el último está fijado a `value`.
+#[derive(Clone)]
+struct Chain {
+    variables: Vec<u32>,
+    links: Vec<i32>,
+    value: bool,
+}
+
+// Cláusulas de la cadena: una definición por eslabón y la unidad final.
+fn chain_clauses(row: &[i32], links: &[i32], value: bool, clauses: &mut Vec<Clause>) {
+    for position in 1..row.len() {
+        encode(&[links[position], links[position - 1], row[position]], false, clauses);
+    }
+    let last = links[links.len() - 1];
+    clauses.push(vec![if value { last } else { -last }]);
+}
+
+struct Prover<'a> {
+    log: &'a mut dyn ProofLog,
+    ids: &'a [u32],
+    equations: &'a [Equation],
+    chains: Vec<Option<Chain>>,
+    next_id: u64,
+    emitted: usize,
+}
+impl Prover<'_> {
+    fn emit(&mut self, clause: &[i32]) {
+        self.emitted += 1;
+        self.log.add(clause);
+    }
+    fn fresh(&mut self) -> i32 {
+        self.next_id += 1;
+        (self.next_id - 1) as i32
+    }
+    // out ↔ previous ⊕ variable, con el literal nuevo delante: las cuatro cláusulas son RAT
+    // sobre él (las dos primeras porque `out` aún no aparece; las otras por resolventes
+    // tautológicas).
+    fn define(&mut self, out: i32, previous: i32, variable: i32) {
+        self.emit(&[-out, previous, variable]);
+        self.emit(&[-out, -previous, -variable]);
+        self.emit(&[out, -previous, variable]);
+        self.emit(&[out, previous, -variable]);
+    }
+    // Cadena de una ecuación original. La unidad final sale por casos sobre sus variables:
+    // con todas asignadas la propagación recorre la cadena o falsea una cláusula original,
+    // y cada nivel superior se obtiene resolviendo los dos casos del siguiente.
+    fn chain_of(&mut self, index: usize) -> Chain {
+        if let Some(chain) = &self.chains[index] {
+            return chain.clone();
+        }
+        let equations = self.equations;
+        let (variables, value) = &equations[index];
+        let row: Vec<i32> = variables.iter().map(|&variable| self.ids[variable as usize] as i32).collect();
+        let mut links = vec![row[0]];
+        for &variable in &row[1..] {
+            let out = self.fresh();
+            self.define(out, links[links.len() - 1], variable);
+            links.push(out);
+        }
+        if row.len() > 1 {
+            let last = links[links.len() - 1];
+            let target = if *value { last } else { -last };
+            let mut clause = Vec::with_capacity(row.len() + 1);
+            for depth in (0..=row.len()).rev() {
+                for pattern in 0..1_u32 << depth {
+                    clause.clear();
+                    clause.push(target);
+                    clause.extend((0..depth).map(|bit| if pattern >> bit & 1 == 1 { -row[bit] } else { row[bit] }));
+                    self.emit(&clause);
+                }
+            }
+        }
+        let chain = Chain { variables: variables.clone(), links, value: *value };
+        self.chains[index] = Some(chain.clone());
+        chain
+    }
+    // Prohíbe cada combinación de valores de los tres eslabones con paridad impar; con
+    // `split`, además bajo cada valor de esa variable. Un eslabón ausente vale falso.
+    fn lemma(&mut self, links: [Option<i32>; 3], split: Option<i32>) {
+        let mut clause: Vec<i32> = Vec::with_capacity(4);
+        for values in 0..8_u32 {
+            if values.count_ones() & 1 == 0 {
+                continue;
+            }
+            // Un eslabón constante no puede valer verdadero: esa combinación no existe.
+            if (0..3).any(|slot| links[slot].is_none() && values >> slot & 1 == 1) {
+                continue;
+            }
+            for case in 0..if split.is_some() { 2 } else { 1 } {
+                clause.clear();
+                for slot in 0..3 {
+                    if let Some(link) = links[slot] {
+                        clause.push(if values >> slot & 1 == 1 { -link } else { link });
+                    }
+                }
+                if let Some(variable) = split {
+                    clause.push(if case == 1 { -variable } else { variable });
+                }
+                clause.sort_unstable_by_key(|literal| (literal.unsigned_abs(), *literal));
+                clause.dedup();
+                // Dos literales opuestos: la combinación es imposible y la cláusula, trivial.
+                if clause.windows(2).all(|pair| pair[0] != -pair[1]) {
+                    self.emit(&clause);
+                }
+            }
+        }
+    }
+    // Suma de dos cadenas. En cada variable del soporte unido se mantiene el invariante
+    // suma ⊕ a ⊕ b = 0 entre los eslabones vigentes: primero bajo cada valor de la variable
+    // (RUP por las definiciones y el invariante anterior) y después sin ella. Devuelve la
+    // cadena de la suma, o `None` si su soporte es vacío; en ese caso un término
+    // independiente a uno ya ha producido la cláusula vacía.
+    fn add(&mut self, a: &Chain, b: &Chain) -> Option<Chain> {
+        let mut sum = Chain { variables: Vec::new(), links: Vec::new(), value: a.value ^ b.value };
+        let (mut ia, mut ib) = (0, 0);
+        let (mut la, mut lb, mut lc): (Option<i32>, Option<i32>, Option<i32>) = (None, None, None);
+        while ia < a.variables.len() || ib < b.variables.len() {
+            let variable = match (a.variables.get(ia), b.variables.get(ib)) {
+                (Some(&first), Some(&second)) => first.min(second),
+                (Some(&only), None) | (None, Some(&only)) => only,
+                (None, None) => unreachable!("The loop condition guarantees a variable"),
+            };
+            let in_a = a.variables.get(ia) == Some(&variable);
+            let in_b = b.variables.get(ib) == Some(&variable);
+            let id = self.ids[variable as usize] as i32;
+            if in_a {
+                la = Some(a.links[ia]);
+                ia += 1;
+            }
+            if in_b {
+                lb = Some(b.links[ib]);
+                ib += 1;
+            }
+            if in_a != in_b {
+                let link = match lc {
+                    None => id,
+                    Some(previous) => {
+                        let out = self.fresh();
+                        self.define(out, previous, id);
+                        out
+                    }
+                };
+                lc = Some(link);
+                sum.variables.push(variable);
+                sum.links.push(link);
+            }
+            self.lemma([lc, la, lb], Some(id));
+            self.lemma([lc, la, lb], None);
+        }
+        match lc {
+            None => {
+                if sum.value {
+                    self.emit(&[]);
+                }
+                None
+            }
+            Some(last) => {
+                self.emit(&[if sum.value { last } else { -last }]);
+                Some(sum)
+            }
+        }
+    }
+    // Suma las ecuaciones indicadas, enlazando siempre con una que comparta variables para
+    // que el soporte intermedio no crezca más de lo necesario.
+    fn derive(&mut self, sources: &[u32]) -> Option<Chain> {
+        let mut remaining: Vec<u32> = sources.to_vec();
+        let mut total: Option<Chain> = None;
+        while !remaining.is_empty() {
+            let equations = self.equations;
+            let choice = total.as_ref().and_then(|chain| {
+                remaining.iter().position(|&index| {
+                    equations[index as usize].0.iter().any(|variable| chain.variables.binary_search(variable).is_ok())
+                })
+            }).unwrap_or(0);
+            let next = self.chain_of(remaining.swap_remove(choice) as usize);
+            total = match total {
+                None => Some(next),
+                Some(chain) => self.add(&chain, &next),
+            };
+            // Soporte vacío a mitad de camino: el resto vuelve a empezar desde cero.
+        }
+        total
+    }
+}
+
+pub fn reduce_parity(formula: &[Clause]) -> ParityReduction {
+    reduce_parity_with_proof(formula, None)
+}
+
+pub fn reduce_parity_with_proof(
+    formula: &[Clause], proof: Option<&mut (dyn ProofLog + '_)>,
+) -> ParityReduction {
+    let mut reduction = ParityReduction::default();
+    if formula.iter().any(Vec::is_empty) {
+        return reduction;
+    }
+    let mut ids: Vec<u32> = formula.iter().flatten().map(|literal| literal.unsigned_abs()).collect();
+    ids.sort_unstable();
+    ids.dedup();
+    let mut equations = extract(&ids, formula);
+    reduction.equations = equations.len();
+    if equations.is_empty() {
+        return reduction;
+    }
+    let first_free = u64::from(*ids.last().expect("Equations have variables")) + 1;
+    // Las derivaciones necesitan auxiliares: sin sitio para ellas no se certifica nada.
+    if proof.is_some() && first_free > (i32::MAX / 2) as u64 {
+        return reduction;
+    }
+    // Componentes conexos: ecuaciones que comparten variables se reducen juntas.
+    let mut parent: Vec<u32> = (0..ids.len() as u32).collect();
+    fn find(parent: &mut [u32], mut variable: u32) -> u32 {
+        while parent[variable as usize] != variable {
+            parent[variable as usize] = parent[parent[variable as usize] as usize];
+            variable = parent[variable as usize];
+        }
+        variable
+    }
+    for (variables, _) in &equations {
+        let root = find(&mut parent, variables[0]);
+        for &variable in &variables[1..] {
+            let other = find(&mut parent, variable);
+            parent[other as usize] = root;
+        }
+    }
+    equations.sort_by_cached_key(|(variables, _)| find(&mut parent, variables[0]));
+    let mut derived: Vec<Row> = Vec::new();
+    let mut contradiction: Option<Vec<u32>> = None;
+    let mut start = 0;
+    while start < equations.len() && contradiction.is_none() {
+        let root = find(&mut parent, equations[start].0[0]);
+        let mut end = start + 1;
+        while end < equations.len() && find(&mut parent, equations[end].0[0]) == root {
+            end += 1;
+        }
+        contradiction = reduce(&equations[start..end], start, proof.is_some(), &mut derived, &mut reduction.rank).err();
+        start = end;
+    }
+    let mut prover = proof.map(|log| Prover {
+        log, ids: &ids, equations: &equations,
+        chains: vec![None; equations.len()],
+        next_id: first_free, emitted: 0,
+    });
+    if let Some(sources) = contradiction {
+        // La suma de esas ecuaciones es 0 = 1: la derivación termina en la cláusula vacía.
+        if let Some(prover) = prover.as_mut() {
+            prover.derive(&sources);
+        }
+        reduction.clauses = vec![Vec::new()];
+        reduction.refuted = true;
+        return reduction;
+    }
+    // Primero las filas cortas: son las más restrictivas y las más baratas de codificar.
+    derived.sort_by_key(|row| row.equation.0.len());
+    let limit = INJECTION_FACTOR * formula.len() + INJECTION_FLOOR;
+    let mut next_id = first_free;
+    for Row { equation: (variables, value), sources, width } in derived {
+        let row: Vec<i32> = variables.iter().map(|&variable| ids[variable as usize] as i32).collect();
+        let cost = if row.len() <= DIRECT_ARITY { 1 << (row.len() - 1) } else { 4 * (row.len() - 1) + 1 };
+        if reduction.clauses.len() + cost > limit {
+            break;
+        }
+        // Con traza, la fila solo entra si su derivación cabe en el presupuesto.
+        let chain = match prover.as_mut() {
+            None => None,
+            Some(prover) => {
+                if prover.emitted + 16 * sources.len() * width > PROOF_BUDGET {
+                    continue;
+                }
+                match prover.derive(&sources) {
+                    Some(chain) => Some(chain),
+                    None => continue,
+                }
+            }
+        };
+        if row.len() <= DIRECT_ARITY {
+            match row.len() {
+                1 => reduction.units += 1,
+                2 => reduction.equivalences += 1,
+                _ => {}
+            }
+            let before = reduction.clauses.len();
+            encode(&row, value, &mut reduction.clauses);
+            // Con todas las variables asignadas la cadena propaga hasta su unidad: RUP.
+            if let Some(prover) = prover.as_mut() {
+                if row.len() > 1 {
+                    for clause in &reduction.clauses[before..] {
+                        prover.emit(clause);
+                    }
+                }
+            }
+            continue;
+        }
+        let links = match chain {
+            // La cadena de la traza es la que se inyecta: sus definiciones ya están probadas.
+            Some(chain) => chain.links,
+            None => {
+                if next_id + row.len() as u64 > i32::MAX as u64 {
+                    continue;
+                }
+                let mut links = vec![row[0]];
+                for _ in 1..row.len() {
+                    links.push(next_id as i32);
+                    next_id += 1;
+                }
+                links
+            }
+        };
+        reduction.auxiliaries += row.len() - 1;
+        chain_clauses(&row, &links, value, &mut reduction.clauses);
+    }
+    reduction
+}
+
+}
+
+pub mod symmetry {
+// Inprocessing: ruptura estática de simetrías por automorfismos del grafo de la fórmula.
+//
+// Corrección. Un automorfismo es una permutación de variables σ con σ(F) = F como conjunto
+// de cláusulas; entonces α satisface F si y solo si α∘σ la satisface. Fijado un orden total
+// de las variables, la menor asignación de cada órbita cumple α ≤lex α∘σ para todo σ del
+// grupo, y por tanto toda cláusula implicada por ese predicado. Añadir tales cláusulas, para
+// cualquier conjunto de automorfismos y siempre con el mismo orden, conserva la
+// satisfacibilidad. Cada permutación candidata se comprueba cláusula a cláusula antes de
+// usarse: la búsqueda es heurística, la verificación no.
+use std::collections::HashMap;
+use std::hash::{BuildHasherDefault, Hasher};
+
+pub type Clause = Vec<i32>;
+
+pub struct SymmetryBreaking {
+    // Pares (variable, imagen) movidos por cada automorfismo verificado, con IDs originales.
+    pub generators: Vec<Vec<(u32, u32)>>,
+    // Predicados lex-leader: se añaden a la fórmula y no introducen variables.
+    pub clauses: Vec<Clause>,
+}
+
+// La ruptura es opcional: cualquier tope solo la debilita, nunca compromete la corrección.
+const REFINEMENT_ROUNDS: usize = 64;
+const MAX_STEPS: usize = 256;
+const MAX_FAILURES: usize = 4;
+const MAX_CHAIN: usize = 64;
+const MAX_GROUP: usize = 64;
+const WORK_PER_LITERAL: u64 = 4096;
+const WORK_FLOOR: u64 = 1 << 20;
+const WORK_CEILING: u64 = 1 << 28;
+
+// Pares (variable, imagen) ordenados por variable; solo figuran las variables movidas.
+type Permutation = Vec<(u32, u32)>;
+
+fn mix(mut value: u64) -> u64 {
+    value = value.wrapping_add(0x9e37_79b9_7f4a_7c15);
+    value = (value ^ (value >> 30)).wrapping_mul(0xbf58_476d_1ce4_e5b9);
+    value = (value ^ (value >> 27)).wrapping_mul(0x94d0_49bb_1331_11eb);
+    value ^ (value >> 31)
+}
+
+// Las tablas de colores solo guardan enteros ya mezclados: basta un hasher multiplicativo.
+#[derive(Default)]
+struct Mixer(u64);
+impl Hasher for Mixer {
+    fn finish(&self) -> u64 {
+        self.0
+    }
+    fn write(&mut self, bytes: &[u8]) {
+        for &byte in bytes {
+            self.0 = mix(self.0 ^ u64::from(byte));
+        }
+    }
+    fn write_u32(&mut self, value: u32) {
+        self.0 = mix(self.0 ^ u64::from(value));
+    }
+    fn write_u64(&mut self, value: u64) {
+        self.0 = mix(self.0 ^ value);
+    }
+}
+type Table<K, V> = HashMap<K, V, BuildHasherDefault<Mixer>>;
+
+// Grafo bipartito de la fórmula normalizada: variables frente a cláusulas, aristas con signo.
+// Todo en arreglos planos: una fórmula grande no paga una reserva por cláusula.
+struct Graph {
+    ids: Vec<u32>,
+    // Cláusulas distintas, cada una con sus literales en orden creciente.
+    clause_offsets: Vec<u32>,
+    clause_literals: Vec<u32>,
+    // (huella, cláusula) ordenado: la pertenencia compara los literales tras la huella.
+    index: Vec<(u64, u32)>,
+    // Ocurrencias por variable: (cláusula << 1) | signo.
+    occurrence_offsets: Vec<u32>,
+    occurrence_edges: Vec<u32>,
+}
+fn fingerprint(clause: &[u32]) -> u64 {
+    clause.iter().fold(clause.len() as u64, |print, &literal| mix(print ^ u64::from(literal)))
+}
+impl Graph {
+    fn new(formula: &[Clause]) -> Self {
+        let mut ids: Vec<u32> = formula.iter().flatten().map(|literal| literal.unsigned_abs()).collect();
+        assert!(u32::try_from(ids.len()).is_ok(), "Formula exceeds 2^32 literals");
+        ids.sort_unstable();
+        ids.dedup();
+        // Con identificadores densos basta una tabla directa; si no, búsqueda binaria.
+        let dense = ids.last().is_some_and(|&last| last as usize <= 4 * ids.len() + 1024);
+        let mut table = vec![0_u32; if dense { ids[ids.len() - 1] as usize + 1 } else { 0 }];
+        for (index, &id) in ids.iter().enumerate().take(if dense { ids.len() } else { 0 }) {
+            table[id as usize] = index as u32;
+        }
+        let mut clause_offsets = vec![0_u32];
+        let mut clause_literals: Vec<u32> = Vec::new();
+        let mut index: Vec<(u64, u32)> = Vec::new();
+        let mut packed: Vec<u32> = Vec::new();
+        for clause in formula {
+            packed.clear();
+            packed.extend(clause.iter().map(|&literal| {
+                let variable = if dense {
+                    table[literal.unsigned_abs() as usize]
+                } else {
+                    ids.binary_search(&literal.unsigned_abs()).expect("Variable was indexed") as u32
+                };
+                (variable << 1) | u32::from(literal < 0)
+            }));
+            packed.sort_unstable();
+            packed.dedup();
+            // Una tautología se satisface siempre: no forma parte de la estructura.
+            if packed.windows(2).any(|pair| pair[0] ^ 1 == pair[1]) {
+                continue;
+            }
+            index.push((fingerprint(&packed), index.len() as u32));
+            clause_literals.extend_from_slice(&packed);
+            clause_offsets.push(clause_literals.len() as u32);
+        }
+        index.sort_unstable();
+        let mut graph = Self {
+            ids, clause_offsets, clause_literals, index,
+            occurrence_offsets: Vec::new(), occurrence_edges: Vec::new(),
+        };
+        graph.drop_repeated_clauses();
+        graph.index_occurrences();
+        graph
+    }
+    // Una cláusula repetida comparte huella y literales con otra anterior: sobra.
+    fn drop_repeated_clauses(&mut self) {
+        let mut repeated = vec![false; self.clause_count()];
+        let mut start = 0;
+        while start < self.index.len() {
+            let mut end = start + 1;
+            while end < self.index.len() && self.index[end].0 == self.index[start].0 {
+                end += 1;
+            }
+            for later in start + 1..end {
+                let clause = self.index[later].1 as usize;
+                repeated[clause] = (start..later).any(|earlier| {
+                    let other = self.index[earlier].1 as usize;
+                    !repeated[other] && self.clause(other) == self.clause(clause)
+                });
+            }
+            start = end;
+        }
+        if !repeated.contains(&true) {
+            return;
+        }
+        let mut offsets = vec![0_u32];
+        let mut literals = Vec::with_capacity(self.clause_literals.len());
+        let mut renamed = vec![0_u32; repeated.len()];
+        for clause in 0..repeated.len() {
+            if !repeated[clause] {
+                renamed[clause] = (offsets.len() - 1) as u32;
+                literals.extend_from_slice(self.clause(clause));
+                offsets.push(literals.len() as u32);
+            }
+        }
+        self.index.retain(|&(_, clause)| !repeated[clause as usize]);
+        for entry in &mut self.index {
+            entry.1 = renamed[entry.1 as usize];
+        }
+        self.clause_offsets = offsets;
+        self.clause_literals = literals;
+    }
+    fn index_occurrences(&mut self) {
+        let mut offsets = vec![0_u32; self.ids.len() + 1];
+        for &literal in &self.clause_literals {
+            offsets[(literal >> 1) as usize + 1] += 1;
+        }
+        for variable in 0..self.ids.len() {
+            offsets[variable + 1] += offsets[variable];
+        }
+        let mut cursor = offsets.clone();
+        let mut edges = vec![0_u32; self.clause_literals.len()];
+        for clause in 0..self.clause_count() {
+            for &literal in self.clause(clause) {
+                let slot = &mut cursor[(literal >> 1) as usize];
+                edges[*slot as usize] = ((clause as u32) << 1) | (literal & 1);
+                *slot += 1;
+            }
+        }
+        self.occurrence_offsets = offsets;
+        self.occurrence_edges = edges;
+    }
+    fn clause_count(&self) -> usize {
+        self.clause_offsets.len() - 1
+    }
+    fn clause(&self, clause: usize) -> &[u32] {
+        &self.clause_literals[self.clause_offsets[clause] as usize..self.clause_offsets[clause + 1] as usize]
+    }
+    fn occurrences(&self, variable: usize) -> &[u32] {
+        let range = self.occurrence_offsets[variable] as usize..self.occurrence_offsets[variable + 1] as usize;
+        &self.occurrence_edges[range]
+    }
+    fn literals(&self) -> u64 {
+        self.clause_literals.len() as u64
+    }
+    fn nodes(&self) -> usize {
+        self.ids.len() + self.clause_count()
+    }
+    fn contains(&self, clause: &[u32]) -> bool {
+        let print = fingerprint(clause);
+        let start = self.index.partition_point(|&(other, _)| other < print);
+        self.index[start..].iter().take_while(|&&(other, _)| other == print)
+            .any(|&(_, known)| self.clause(known as usize) == clause)
+    }
+    fn degree(&self, node: usize) -> usize {
+        let variables = self.ids.len();
+        if node < variables { self.occurrences(node).len() } else { self.clause(node - variables).len() }
+    }
+    // Vecinos de un nodo con el signo de la arista.
+    fn edges(&self, node: usize) -> impl Iterator<Item = (usize, u32)> + '_ {
+        let variables = self.ids.len();
+        let (edges, offset) = if node < variables {
+            (self.occurrences(node), variables)
+        } else {
+            (self.clause(node - variables), 0)
+        };
+        edges.iter().map(move |&edge| (offset + (edge >> 1) as usize, edge & 1))
+    }
+    // Suma conmutativa: la firma no depende del orden de los vecinos.
+    fn signature(&self, colors: &[u32], node: usize) -> u64 {
+        self.edges(node).fold(0, |sum, (neighbor, sign)| {
+            sum.wrapping_add(mix(u64::from(colors[neighbor]) << 1 | u64::from(sign)))
+        })
+    }
+}
+
+// Partición equitativa de partida. Color inicial: variables por frecuencia y polaridad,
+// cláusulas por tamaño y número de literales negativos; después, refinamiento iterativo.
+fn base_partition(graph: &Graph) -> (Vec<u32>, usize) {
+    let variables = graph.ids.len();
+    let mut names: Table<(u64, u64), u32> = Table::default();
+    let mut colors: Vec<u32> = (0..graph.nodes()).map(|node| {
+        let negative = graph.edges(node).filter(|&(_, sign)| sign == 1).count() as u64;
+        let key = (u64::from(node >= variables), (graph.degree(node) as u64) << 32 | negative);
+        let next = names.len() as u32;
+        *names.entry(key).or_insert(next)
+    }).collect();
+    let mut count = names.len();
+    let mut sizes = vec![0_u32; count];
+    for _ in 0..REFINEMENT_ROUNDS {
+        sizes.clear();
+        sizes.resize(count, 0);
+        for &color in &colors {
+            sizes[color as usize] += 1;
+        }
+        names.clear();
+        let mut next = 0_u32;
+        let mut refined = Vec::with_capacity(graph.nodes());
+        for node in 0..graph.nodes() {
+            // Las variables van primero: si ya tienen todas un color propio, ninguna
+            // permutación no trivial conserva los colores y no hay nada más que refinar.
+            if node == variables && next as usize == variables {
+                return (Vec::new(), 0);
+            }
+            // Una celda unitaria no puede dividirse: conserva su identidad sin firmar.
+            let fresh = sizes[colors[node] as usize] == 1 || {
+                let key = (u64::from(colors[node]), graph.signature(&colors, node));
+                match names.get(&key) {
+                    Some(&known) => {
+                        refined.push(known);
+                        false
+                    }
+                    None => {
+                        names.insert(key, next);
+                        true
+                    }
+                }
+            };
+            if fresh {
+                refined.push(next);
+                next += 1;
+            }
+        }
+        let stable = next as usize == count;
+        count = next as usize;
+        colors = refined;
+        if stable {
+            break;
+        }
+    }
+    (colors, count)
+}
+
+// Dos variables coinciden si comparten alguna cláusula. Es el criterio estructural que
+// sustituye al orden de los identificadores: no cambia al renombrar las variables.
+fn cooccur(graph: &Graph, first: u32, second: u32) -> bool {
+    graph.occurrences(first as usize).iter().any(|&edge| {
+        graph.clause((edge >> 1) as usize).iter().any(|&literal| literal >> 1 == second)
+    })
+}
+
+fn apply(permutation: &Permutation, variable: u32) -> u32 {
+    permutation.binary_search_by_key(&variable, |&(source, _)| source)
+        .map_or(variable, |index| permutation[index].1)
+}
+
+// σ es biyectiva sobre su soporte y lleva cada cláusula afectada a otra cláusula de F.
+// Una inyección de un conjunto finito en sí mismo es biyectiva: σ(F) = F.
+fn is_automorphism(graph: &Graph, permutation: &Permutation) -> bool {
+    let mut images: Vec<u32> = permutation.iter().map(|&(_, image)| image).collect();
+    images.sort_unstable();
+    if !images.iter().eq(permutation.iter().map(|(variable, _)| variable)) {
+        return false;
+    }
+    let mut affected: Vec<u32> = permutation.iter().flat_map(|&(variable, _)| {
+        graph.occurrences(variable as usize).iter().map(|&edge| edge >> 1)
+    }).collect();
+    affected.sort_unstable();
+    affected.dedup();
+    let mut mapped = Vec::new();
+    affected.iter().all(|&clause| {
+        mapped.clear();
+        mapped.extend(graph.clause(clause as usize).iter().map(|&literal| {
+            (apply(permutation, literal >> 1) << 1) | (literal & 1)
+        }));
+        mapped.sort_unstable();
+        graph.contains(&mapped)
+    })
+}
+
+fn is_involution(permutation: &Permutation) -> bool {
+    permutation.iter().all(|&(variable, image)| apply(permutation, image) == variable)
+}
+
+// a∘b∘a: si a y b intercambian un mismo punto con w_a y w_b, esta intercambia w_a con w_b.
+fn conjugate(a: &Permutation, b: &Permutation) -> Permutation {
+    let mut support: Vec<u32> = a.iter().chain(b).map(|&(variable, _)| variable).collect();
+    support.sort_unstable();
+    support.dedup();
+    support.into_iter().filter_map(|variable| {
+        let image = apply(a, apply(b, apply(a, variable)));
+        (image != variable).then_some((variable, image))
+    }).collect()
+}
+
+// Individualización-refinamiento sobre dos copias del grafo: una coloración por lado y
+// colores compartidos. Dos nodos de lados distintos con el mismo color son candidatos a
+// corresponderse; una celda con distinto tamaño en cada lado descarta la búsqueda.
+struct Search<'a> {
+    graph: &'a Graph,
+    base: &'a [u32],
+    base_sizes: Vec<u32>,
+    colors: [Vec<u32>; 2],
+    sizes: [Vec<u32>; 2],
+    touched: Vec<u32>,
+    is_touched: Vec<bool>,
+    dirty: [Vec<u32>; 2],
+    is_dirty: [Vec<bool>; 2],
+    entries: Vec<(u32, u64, u8, u32)>,
+    work: u64,
+    limit: u64,
+}
+impl<'a> Search<'a> {
+    fn new(graph: &'a Graph, base: &'a [u32], count: usize) -> Self {
+        let mut base_sizes = vec![0_u32; count];
+        for &color in base {
+            base_sizes[color as usize] += 1;
+        }
+        let nodes = graph.nodes();
+        Self {
+            graph, base,
+            colors: [base.to_vec(), base.to_vec()],
+            sizes: [base_sizes.clone(), base_sizes.clone()],
+            base_sizes,
+            touched: Vec::new(),
+            is_touched: vec![false; nodes],
+            dirty: [Vec::new(), Vec::new()],
+            is_dirty: [vec![false; nodes], vec![false; nodes]],
+            entries: Vec::new(),
+            work: 0,
+            limit: (WORK_FLOOR + WORK_PER_LITERAL * graph.literals()).min(WORK_CEILING),
+        }
+    }
+    fn exhausted(&self) -> bool {
+        self.work > self.limit
+    }
+    // Coste proporcional a lo tocado en la búsqueda anterior, no al tamaño del grafo.
+    fn reset(&mut self) {
+        for side in 0..2 {
+            self.sizes[side].truncate(self.base_sizes.len());
+            for &node in &self.dirty[side] {
+                self.is_dirty[side][node as usize] = false;
+            }
+            self.dirty[side].clear();
+        }
+        for &node in &self.touched {
+            let node = node as usize;
+            let color = self.base[node] as usize;
+            for side in 0..2 {
+                self.colors[side][node] = self.base[node];
+                self.sizes[side][color] = self.base_sizes[color];
+            }
+            self.is_touched[node] = false;
+        }
+        self.work += self.touched.len() as u64 + 1;
+        self.touched.clear();
+    }
+    fn fresh(&mut self) -> u32 {
+        self.sizes[0].push(0);
+        self.sizes[1].push(0);
+        (self.sizes[0].len() - 1) as u32
+    }
+    fn recolor(&mut self, side: usize, node: usize, color: u32) {
+        let graph = self.graph;
+        self.sizes[side][self.colors[side][node] as usize] -= 1;
+        self.sizes[side][color as usize] += 1;
+        self.colors[side][node] = color;
+        if !self.is_touched[node] {
+            self.is_touched[node] = true;
+            self.touched.push(node as u32);
+        }
+        // Solo los vecinos de un nodo recoloreado pueden cambiar de firma.
+        for (neighbor, _) in graph.edges(node) {
+            if !self.is_dirty[side][neighbor] {
+                self.is_dirty[side][neighbor] = true;
+                self.dirty[side].push(neighbor as u32);
+            }
+        }
+    }
+    fn individualize(&mut self, source: usize, target: usize) {
+        let color = self.fresh();
+        self.recolor(0, source, color);
+        self.recolor(1, target, color);
+    }
+    // Refinamiento incremental conjunto. Devuelve falso si alguna celda queda con distinto
+    // tamaño en cada lado (ningún automorfismo extiende lo fijado) o se agota el presupuesto.
+    fn refine(&mut self) -> bool {
+        let graph = self.graph;
+        while !(self.dirty[0].is_empty() && self.dirty[1].is_empty()) {
+            let mut entries = std::mem::take(&mut self.entries);
+            entries.clear();
+            for side in 0..2 {
+                let mut nodes = std::mem::take(&mut self.dirty[side]);
+                for &node in &nodes {
+                    let node = node as usize;
+                    self.is_dirty[side][node] = false;
+                    self.work += graph.degree(node) as u64 + 1;
+                    let signature = graph.signature(&self.colors[side], node);
+                    entries.push((self.colors[side][node], signature, side as u8, node as u32));
+                }
+                nodes.clear();
+                self.dirty[side] = nodes;
+            }
+            entries.sort_unstable();
+            let mut balanced = !self.exhausted();
+            let mut start = 0;
+            while balanced && start < entries.len() {
+                let color = entries[start].0 as usize;
+                let mut end = start;
+                let mut dirty = [0_u32; 2];
+                while end < entries.len() && entries[end].0 as usize == color {
+                    dirty[entries[end].2 as usize] += 1;
+                    end += 1;
+                }
+                // Toda la celda vio el mismo cambio: sigue siendo una celda, sin renombrar.
+                let whole = dirty[0] == self.sizes[0][color] && dirty[1] == self.sizes[1][color];
+                if !(whole && entries[start].1 == entries[end - 1].1) {
+                    let mut run = start;
+                    while run < end {
+                        let mut stop = run;
+                        let mut members = [0_u32; 2];
+                        while stop < end && entries[stop].1 == entries[run].1 {
+                            members[entries[stop].2 as usize] += 1;
+                            stop += 1;
+                        }
+                        // Si nadie conserva el color, la primera parte se queda con él.
+                        if !(whole && run == start) {
+                            if members[0] != members[1] {
+                                balanced = false;
+                                break;
+                            }
+                            let fresh = self.fresh();
+                            for &(_, _, side, node) in &entries[run..stop] {
+                                self.recolor(side as usize, node as usize, fresh);
+                            }
+                        }
+                        run = stop;
+                    }
+                    balanced = balanced && self.sizes[0][color] == self.sizes[1][color];
+                }
+                start = end;
+            }
+            self.entries = entries;
+            if !balanced {
+                return false;
+            }
+        }
+        true
+    }
+    // Busca un automorfismo que lleve `source` a `target` moviendo lo menos posible: una
+    // variable con el mismo color en ambos lados se deja fija y las desplazadas se emparejan
+    // entre sí, prefiriendo la pareja que comparte cláusula. En modo `batch` cada celda
+    // empareja de golpe todas sus desplazadas; si no, solo la menor. El resultado es un
+    // candidato hasta que `is_automorphism` lo confirma.
+    fn find(&mut self, source: usize, target: usize, batch: bool) -> Option<Permutation> {
+        let graph = self.graph;
+        let variables = graph.ids.len();
+        self.reset();
+        self.individualize(source, target);
+        let mut displaced: Vec<u32> = Vec::new();
+        for _ in 0..MAX_STEPS {
+            if !self.refine() {
+                return None;
+            }
+            displaced.clear();
+            displaced.extend(self.touched.iter().copied().filter(|&node| {
+                let node = node as usize;
+                node < variables && self.colors[0][node] != self.colors[1][node]
+            }));
+            displaced.sort_unstable();
+            let pending = displaced.iter().copied().find(|&node| {
+                self.sizes[0][self.colors[0][node as usize] as usize] > 1
+            });
+            let Some(pivot) = pending else {
+                // Celdas unitarias: el color determina la imagen de cada variable desplazada.
+                let targets: Table<u32, u32> = displaced.iter()
+                    .map(|&node| (self.colors[1][node as usize], node)).collect();
+                return displaced.iter().map(|&node| {
+                    targets.get(&self.colors[0][node as usize]).map(|&image| (node, image))
+                }).collect();
+            };
+            if !batch {
+                let color = self.colors[0][pivot as usize];
+                let mut candidates = displaced.iter().copied()
+                    .filter(|&node| self.colors[1][node as usize] == color);
+                let partner = candidates.clone().find(|&node| cooccur(graph, pivot, node))
+                    .or_else(|| candidates.next())?;
+                self.individualize(pivot as usize, partner as usize);
+                continue;
+            }
+            let mut sources: Vec<(u32, u32)> = displaced.iter()
+                .map(|&node| (self.colors[0][node as usize], node))
+                .filter(|&(color, _)| self.sizes[0][color as usize] > 1).collect();
+            let mut targets: Vec<(u32, u32)> = displaced.iter()
+                .map(|&node| (self.colors[1][node as usize], node))
+                .filter(|&(color, _)| self.sizes[1][color as usize] > 1).collect();
+            sources.sort_unstable();
+            targets.sort_unstable();
+            if sources.len() != targets.len() {
+                return None;
+            }
+            let mut used = vec![false; targets.len()];
+            let mut start = 0;
+            while start < sources.len() {
+                let color = sources[start].0;
+                let mut end = start;
+                while end < sources.len() && sources[end].0 == color {
+                    end += 1;
+                }
+                if targets[start].0 != color || targets[end - 1].0 != color {
+                    return None;
+                }
+                for index in start..end {
+                    let node = sources[index].1;
+                    let near = if end - start <= MAX_GROUP {
+                        (start..end).find(|&slot| !used[slot] && cooccur(graph, node, targets[slot].1))
+                    } else {
+                        None
+                    };
+                    let slot = near.or_else(|| (start..end).find(|&slot| !used[slot]))?;
+                    used[slot] = true;
+                    self.individualize(node as usize, targets[slot].1 as usize);
+                }
+                start = end;
+            }
+        }
+        None
+    }
+}
+
+struct Orbits(Vec<u32>);
+impl Orbits {
+    fn find(&mut self, mut variable: u32) -> u32 {
+        while self.0[variable as usize] != variable {
+            self.0[variable as usize] = self.0[self.0[variable as usize] as usize];
+            variable = self.0[variable as usize];
+        }
+        variable
+    }
+    fn join(&mut self, first: u32, second: u32) {
+        let (first, second) = (self.find(first), self.find(second));
+        self.0[first.max(second) as usize] = first.min(second);
+    }
+}
+
+// Una familia de involuciones (v w1), (v w2), ... que solo comparten el bloque de v describe
+// filas intercambiables: bloque, g1(bloque), g2(bloque), ... Se colocan consecutivas en el
+// orden global, alineadas por columnas, y dentro de cada fila van primero las columnas
+// cuyo par ya excluye la fórmula, porque su conjunto lex-leader colapsa a una cláusula más
+// corta. El orden solo afecta a la fuerza de los predicados, nunca a su validez.
+fn place_rows(
+    graph: &Graph,
+    members: &[(u32, Permutation)],
+    order: &mut Vec<u32>,
+    placed: &mut [bool],
+) {
+    let (first, second) = (&members[0].1, &members[1].1);
+    let mut columns: Vec<u32> = first.iter().map(|&(variable, _)| variable)
+        .filter(|&variable| apply(second, variable) != variable).collect();
+    let mut rows: Vec<u32> = columns.clone();
+    for (_, involution) in members {
+        rows.extend(columns.iter().map(|&variable| apply(involution, variable)));
+    }
+    let distinct = {
+        let mut sorted = rows.clone();
+        sorted.sort_unstable();
+        sorted.windows(2).all(|pair| pair[0] != pair[1])
+    };
+    if columns.is_empty() || !distinct || rows.iter().any(|&variable| placed[variable as usize]) {
+        return;
+    }
+    columns.sort_unstable_by_key(|&variable| {
+        let mut exclusion = [(variable << 1) | 1, (apply(first, variable) << 1) | 1];
+        exclusion.sort_unstable();
+        (!graph.contains(&exclusion), variable)
+    });
+    order.extend(&columns);
+    for (_, involution) in members {
+        order.extend(columns.iter().map(|&variable| apply(involution, variable)));
+    }
+    for variable in rows {
+        placed[variable as usize] = true;
+    }
+}
+
+// Agrupamiento avaro. Para la menor variable v de cada celda aún sin mover se buscan
+// automorfismos v → w: primero hacia las w de su celda que comparten cláusula con v
+// (variables intercambiables dentro de las mismas cláusulas) y después hacia las que
+// quedan fuera de la órbita ya generada. De cada estrella de involuciones (v w1),
+// (v w2), ... se derivan por conjugación las transposiciones adyacentes (w1 w2),
+// (w2 w3), ..., cuyo predicado lex-leader ordena las filas por completo.
+// Devuelve los automorfismos a romper y la posición de cada variable en el orden global.
+fn discover(graph: &Graph) -> (Vec<Permutation>, Vec<u32>) {
+    let variables = graph.ids.len();
+    let (base, count) = base_partition(graph);
+    if count == 0 {
+        return (Vec::new(), (0..variables as u32).collect());
+    }
+    // Celdas de variables como tramos de una lista ordenada por (color, variable).
+    let mut members: Vec<u32> = (0..variables as u32)
+        .filter(|&variable| !graph.occurrences(variable as usize).is_empty()).collect();
+    members.sort_unstable_by_key(|&variable| (base[variable as usize], variable));
+    let cell_of = |variable: u32| {
+        let color = base[variable as usize];
+        let start = members.partition_point(|&other| base[other as usize] < color);
+        let end = members.partition_point(|&other| base[other as usize] <= color);
+        &members[start..end]
+    };
+    let mut search = Search::new(graph, &base, count);
+    let mut orbits = Orbits((0..variables as u32).collect());
+    let mut moved = vec![false; variables];
+    let mut breakers: Vec<Permutation> = Vec::new();
+    let mut families: Vec<Vec<(u32, Permutation)>> = Vec::new();
+    let mut order: Vec<u32> = Vec::with_capacity(variables);
+    let mut placed = vec![false; variables];
+    for origin in 0..variables as u32 {
+        if search.exhausted() {
+            break;
+        }
+        if moved[origin as usize] || graph.occurrences(origin as usize).is_empty() {
+            continue;
+        }
+        let cell = cell_of(origin);
+        if cell.len() < 2 {
+            continue;
+        }
+        let (near, far): (Vec<u32>, Vec<u32>) = cell.iter().copied()
+            .filter(|&target| target != origin)
+            .partition(|&target| cooccur(graph, origin, target));
+        let mut star: Vec<(u32, Permutation)> = Vec::new();
+        let mut failures = 0;
+        for (target, close) in near.into_iter().map(|target| (target, true))
+            .chain(far.into_iter().map(|target| (target, false)))
+        {
+            // Una vecina se prueba siempre; una lejana, solo si aún no es alcanzable.
+            if !close && orbits.find(origin) == orbits.find(target) {
+                continue;
+            }
+            // Primero el emparejamiento por lotes; si no cuadra, el individual.
+            let found = [true, false].into_iter().find_map(|batch| {
+                search.find(origin as usize, target as usize, batch)
+                    .filter(|permutation| is_automorphism(graph, permutation))
+            });
+            let Some(permutation) = found else {
+                failures += 1;
+                if failures == MAX_FAILURES || search.exhausted() {
+                    break;
+                }
+                continue;
+            };
+            failures = 0;
+            for &(variable, image) in &permutation {
+                orbits.join(variable, image);
+                moved[variable as usize] = true;
+            }
+            star.push((target, permutation));
+        }
+        // Familias de involuciones compatibles: cada una fija el destino de las demás.
+        let mut local: Vec<Vec<(u32, Permutation)>> = Vec::new();
+        for (target, permutation) in star {
+            if !is_involution(&permutation) {
+                breakers.push(permutation);
+                continue;
+            }
+            let family = local.iter_mut().find(|family| family.iter().all(|(other, mate)| {
+                apply(mate, target) == target && apply(&permutation, *other) == *other
+            }));
+            match family {
+                Some(family) => family.push((target, permutation)),
+                None => local.push(vec![(target, permutation)]),
+            }
+        }
+        for family in local {
+            if family.len() > 1 {
+                place_rows(graph, &family, &mut order, &mut placed);
+            }
+            families.push(family);
+        }
+    }
+    order.extend((0..variables as u32).filter(|&variable| !placed[variable as usize]));
+    let mut rank = vec![0_u32; variables];
+    for (position, &variable) in order.iter().enumerate() {
+        rank[variable as usize] = position as u32;
+    }
+    for mut family in families {
+        family.sort_unstable_by_key(|(target, _)| rank[*target as usize]);
+        breakers.push(family[0].1.clone());
+        for pair in family.windows(2) {
+            let adjacent = conjugate(&pair[0].1, &pair[1].1);
+            debug_assert!(is_automorphism(graph, &adjacent));
+            breakers.push(adjacent);
+        }
+    }
+    (breakers, rank)
+}
+
+// Predicado lex-leader de σ con las variables en el orden global: para cada variable
+// movida u, (pares anteriores iguales) ⇒ u ≤ σ(u). Se emite con el antecedente reforzado
+// «pares anteriores ambos falsos»: sigue siendo consecuencia del predicado y no necesita
+// variables auxiliares. Si F ya contiene (¬u ∨ ¬σ(u)), la resolución elimina σ(u).
+fn lex_leader(graph: &Graph, permutation: &Permutation, rank: &[u32], emitted: &mut Vec<Vec<u32>>) {
+    let mut pairs = permutation.clone();
+    pairs.sort_unstable_by_key(|&(variable, _)| rank[variable as usize]);
+    let mut prefix: Vec<u32> = Vec::new();
+    let mut conjuncts = 0;
+    for &(variable, image) in &pairs {
+        let (smaller, larger) = (variable << 1, image << 1);
+        // Con u ya en el prefijo la cláusula contendría u y ¬u: es una tautología.
+        if !prefix.contains(&smaller) {
+            if conjuncts == MAX_CHAIN {
+                break;
+            }
+            conjuncts += 1;
+            let mut clause = prefix.clone();
+            clause.push(smaller | 1);
+            let mut exclusion = [smaller | 1, larger | 1];
+            exclusion.sort_unstable();
+            if !graph.contains(&exclusion) {
+                clause.push(larger);
+            }
+            clause.sort_unstable();
+            clause.dedup();
+            emitted.push(clause);
+        }
+        for literal in [smaller, larger] {
+            if !prefix.contains(&literal) {
+                prefix.push(literal);
+            }
+        }
+    }
+}
+
+pub fn break_symmetries(formula: &[Clause]) -> SymmetryBreaking {
+    if formula.iter().any(Vec::is_empty) {
+        return SymmetryBreaking { generators: Vec::new(), clauses: Vec::new() };
+    }
+    let graph = Graph::new(formula);
+    let (breakers, rank) = discover(&graph);
+    let mut emitted = Vec::new();
+    for permutation in &breakers {
+        lex_leader(&graph, permutation, &rank, &mut emitted);
+    }
+    emitted.sort_unstable();
+    emitted.dedup();
+    emitted.retain(|clause| !graph.contains(clause));
+    let id = |variable: u32| graph.ids[variable as usize];
+    SymmetryBreaking {
+        generators: breakers.iter().map(|permutation| {
+            permutation.iter().map(|&(variable, image)| (id(variable), id(image))).collect()
+        }).collect(),
+        clauses: emitted.iter().map(|clause| clause.iter().map(|&literal| {
+            let variable = id(literal >> 1) as i32;
+            if literal & 1 == 0 { variable } else { -variable }
+        }).collect()).collect(),
+    }
+}
+
+}
+
 pub mod cdcl {
 use std::collections::{HashSet, VecDeque};
+use super::proof::ProofLog;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
@@ -24,9 +1529,6 @@ pub struct SolveStats {
     pub restarts: usize,
     pub deleted_clauses: usize,
     pub database_reductions: usize,
-    pub symmetry_rows: usize,
-    pub symmetry_columns: usize,
-    pub symmetry_clauses: usize,
     pub reignitions: usize,
     pub reignition_flips: usize,
     pub reignition_ms: f64,
@@ -262,189 +1764,8 @@ struct SearchControl<'a, 'p> {
     cube: &'a [u32],
     cancel: Option<&'a AtomicBool>,
     sharing: Option<&'a mut Sharing<'p>>,
-}
-// Certificado estructural completo: no se infieren simetrías por frecuencias.
-fn inject_pigeonhole_symmetry(formula: &mut Formula, variables: &[u32]) -> (usize, usize, usize) {
-    use std::collections::{BTreeMap, BTreeSet};
-    #[derive(Clone, Copy, Default)]
-    struct Occurrence {
-        positive_count: usize,
-        negative_count: usize,
-        positive_clause: usize,
-        negative_clause: usize,
-    }
-    fn find(parent: &mut [usize], mut variable: usize) -> usize {
-        while parent[variable] != variable {
-            parent[variable] = parent[parent[variable]];
-            variable = parent[variable];
-        }
-        variable
-    }
-    let variable_index = |literal: i32| {
-        variables.binary_search(&literal.unsigned_abs()).expect("Indexed variable")
-    };
-    let mut occurrences = vec![Occurrence::default(); variables.len()];
-    for (clause, literals) in formula.iter().enumerate() {
-        for &literal in literals {
-            let occurrence = &mut occurrences[variable_index(literal)];
-            if literal > 0 {
-                occurrence.positive_count += 1;
-                occurrence.positive_clause = clause;
-            } else {
-                occurrence.negative_count += 1;
-                occurrence.negative_clause = clause;
-            }
-        }
-    }
-    let auxiliary: Vec<bool> = occurrences.iter().map(|occurrence| {
-        occurrence.positive_count == 1
-            && occurrence.negative_count == 1
-            && occurrence.positive_clause != occurrence.negative_clause
-            && formula[occurrence.positive_clause].len() == 3
-            && formula[occurrence.negative_clause].len() == 3
-    }).collect();
-    let mut consumed = vec![false; formula.len()];
-    let mut rows = Vec::new();
-    for source in 0..formula.len() {
-        if !formula[source].iter().all(|&literal| literal > 0) {
-            continue;
-        }
-        let mut row = Vec::new();
-        let mut current = source;
-        let mut incoming = None;
-        loop {
-            if consumed[current] {
-                return (0, 0, 0);
-            }
-            consumed[current] = true;
-            let mut next = None;
-            let mut negative_count = 0;
-            for &literal in &formula[current] {
-                let variable = variable_index(literal);
-                if literal < 0 {
-                    negative_count += 1;
-                    if Some(variable) != incoming {
-                        return (0, 0, 0);
-                    }
-                } else if auxiliary[variable] {
-                    if next.replace(variable).is_some() {
-                        return (0, 0, 0);
-                    }
-                } else {
-                    row.push(variable);
-                }
-            }
-            if negative_count != usize::from(incoming.is_some()) {
-                return (0, 0, 0);
-            }
-            let Some(variable) = next else { break };
-            // (C|y)&(-y|D) equivale a C|D al proyectar el auxiliar privado y.
-            current = occurrences[variable].negative_clause;
-            incoming = Some(variable);
-        }
-        rows.push(row);
-    }
-    let pigeons = rows.len();
-    let holes = rows.first().map_or(0, Vec::len);
-    if pigeons < 2 || holes < 2 || rows.iter().any(|row| row.len() != holes) {
-        return (0, 0, 0);
-    }
-    let mut owner = vec![usize::MAX; variables.len()];
-    for (row_index, row) in rows.iter().enumerate() {
-        for &variable in row {
-            if owner[variable] != usize::MAX {
-                return (0, 0, 0);
-            }
-            owner[variable] = row_index;
-        }
-    }
-    let mut parent: Vec<usize> = (0..variables.len()).collect();
-    let mut degree = vec![0_usize; variables.len()];
-    let mut edges = BTreeSet::new();
-    for (index, clause) in formula.iter().enumerate() {
-        if consumed[index] {
-            continue;
-        }
-        if clause.len() != 2 || clause.iter().any(|&literal| literal >= 0) {
-            return (0, 0, 0);
-        }
-        let a = variable_index(clause[0]);
-        let b = variable_index(clause[1]);
-        if owner[a] == usize::MAX || owner[b] == usize::MAX || owner[a] == owner[b] {
-            return (0, 0, 0);
-        }
-        if !edges.insert((a.min(b), a.max(b))) {
-            return (0, 0, 0);
-        }
-        degree[a] += 1;
-        degree[b] += 1;
-        let first = find(&mut parent, a);
-        let second = find(&mut parent, b);
-        parent[first.max(second)] = first.min(second);
-    }
-    let mut columns: BTreeMap<usize, Vec<usize>> = BTreeMap::new();
-    for variable in 0..variables.len() {
-        if owner[variable] == usize::MAX {
-            continue;
-        }
-        if degree[variable] != pigeons - 1 {
-            return (0, 0, 0);
-        }
-        columns.entry(find(&mut parent, variable)).or_default().push(variable);
-    }
-    if columns.len() != holes {
-        return (0, 0, 0);
-    }
-    let mut matrix = vec![vec![0_i32; holes]; pigeons];
-    for (column_index, column) in columns.values().enumerate() {
-        if column.len() != pigeons {
-            return (0, 0, 0);
-        }
-        let mut present = vec![false; pigeons];
-        for &variable in column {
-            let row = owner[variable];
-            if present[row] {
-                return (0, 0, 0);
-            }
-            present[row] = true;
-            matrix[row][column_index] = variables[variable] as i32;
-        }
-        // p nodos distintos, grado p-1 y una celda por fila certifican K_p.
-    }
-    // L literales, V variables: reconocimiento O(L*V + L*log(L));
-    // se añaden O(p*h^2) cláusulas y ninguna variable nueva.
-    let before = formula.len();
-    // PHP solo exige al menos una celda por fila: borrar otras celdas verdaderas
-    // preserva sus cláusulas. Así se selecciona primero un modelo funcional.
-    for row in &matrix {
-        for first in 0..holes {
-            for second in first + 1..holes {
-                formula.push(vec![-row[first], -row[second]]);
-            }
-        }
-    }
-    // Las permutaciones de filas son simetrías del PHP proyectado certificado.
-    // Orden estricto de las columnas elegidas: c[r] < c[r+1].
-    for row in 0..pigeons - 1 {
-        for first in 0..holes {
-            for second in 0..=first {
-                formula.push(vec![-matrix[row][first], -matrix[row + 1][second]]);
-            }
-        }
-    }
-    // Consecuencias del orden: c[r]>=r; si p<=h, c[r]<=h-p+r.
-    // Para p=h+1, la última fila queda falsa y BCP cierra en nivel cero.
-    for (row_index, row) in matrix.iter().enumerate() {
-        for &literal in &row[..row_index.min(holes)] {
-            formula.push(vec![-literal]);
-        }
-        if pigeons <= holes {
-            for &literal in &row[holes - pigeons + row_index + 1..] {
-                formula.push(vec![-literal]);
-            }
-        }
-    }
-    (pigeons, holes, formula.len() - before)
+    // Traza DRAT de la búsqueda en serie; el enjambre no la emite.
+    proof: Option<&'a mut dyn ProofLog>,
 }
 // Pesos enteros de probSAT, 2^16 * 2.06^(-roturas): cuanto más rompe un flip, menos probable.
 const BREAK_WEIGHTS: [u64; 16] =
@@ -1399,7 +2720,7 @@ impl State {
         signed_model(variables, walker.best_values.iter().copied())
     }
     // Candidatas: aprendidas con LBD > 2 que no son razón ni se usaron desde la última reducción.
-    fn reduce_database(&mut self) {
+    fn reduce_database(&mut self, mut proof: Option<(&mut (dyn ProofLog + '_), &[u32])>) {
         debug_assert_eq!(self.head, self.trail.len());
         // Intervalo aritmético: la base retenida crece con la raíz del número de conflictos.
         self.cleanup_interval += CLEANUP_INTERVAL;
@@ -1431,8 +2752,15 @@ impl State {
                 .then_with(|| a.cmp(&b))
         });
         let remove_count = (candidates.len() / 2).max(1);
+        let mut line: Vec<i32> = Vec::new();
         for &reference in &candidates[..remove_count] {
             self.arena[reference + 1] |= GARBAGE;
+            // Una razón vigente nunca es candidata: lo borrado no sostiene ninguna unidad.
+            if let Some((log, variables)) = proof.as_mut() {
+                let start = reference + HEADER;
+                external(variables, &self.arena[start..start + self.arena[reference] as usize], &mut line);
+                log.delete(&line);
+            }
         }
         // La arena vieja guarda la nueva referencia de cada superviviente en su palabra de flags.
         let mut old = std::mem::take(&mut self.arena);
@@ -1474,7 +2802,7 @@ fn active(config: Option<ReignitionConfig>) -> Option<ReignitionConfig> {
         configuration.interval != 0 && configuration.oracle.flips_per_variable != 0
     })
 }
-fn prepare_formula(mut formula: Formula, oracle: Option<OracleConfig>) -> Option<(State, Vec<u32>)> {
+fn prepare_formula(formula: &[Vec<i32>], oracle: Option<OracleConfig>) -> Option<(State, Vec<u32>)> {
     if formula.iter().any(Vec::is_empty) {
         return None;
     }
@@ -1486,18 +2814,12 @@ fn prepare_formula(mut formula: Formula, oracle: Option<OracleConfig>) -> Option
     variables.dedup();
     // Literales y referencias comparten 31 bits; NO_REASON queda fuera de ambos rangos.
     assert!(variables.len() < 1 << 30, "Too many variables");
-    // La canonización precede a cualquier supuesto de un cubo.
-    let (symmetry_rows, symmetry_columns, symmetry_clauses) =
-        inject_pigeonhole_symmetry(&mut formula, &variables);
-    let mut state = State::new(variables.len(), SolveStats {
-        symmetry_rows, symmetry_columns, symmetry_clauses,
-        ..SolveStats::default()
-    });
+    let mut state = State::new(variables.len(), SolveStats::default());
     let mut packed: Vec<u32> = Vec::new();
     // Copia plana para el oráculo; las unidades le llegan después por el trail raíz.
     let mut walk_literals = Vec::new();
     let mut walk_offsets = vec![0_u32];
-    for clause in &formula {
+    for clause in formula {
         packed.clear();
         packed.extend(clause.iter().map(|&literal| {
             let variable = variables.binary_search(&literal.unsigned_abs())
@@ -1536,25 +2858,43 @@ fn prepare_formula(mut formula: Formula, oracle: Option<OracleConfig>) -> Option
     state.queue.search = state.queue.last;
     Some((state, variables))
 }
+// Literales internos a identificadores DIMACS, para las líneas de la traza.
+fn external(variables: &[u32], clause: &[u32], line: &mut Vec<i32>) {
+    line.clear();
+    line.extend(clause.iter().map(|&literal| {
+        let id = variables[(literal >> 1) as usize] as i32;
+        if literal & 1 == 0 { id } else { -id }
+    }));
+}
 pub fn solve_cdcl(formula: &[Vec<i32>]) -> (Option<Vec<i32>>, SolveStats) {
-    solve_cdcl_inner(formula, None)
+    solve_cdcl_inner(formula, None, None)
+}
+// Igual que `solve_cdcl_with_reignition`, registrando cada cláusula aprendida o borrada.
+// Toda cláusula aprendida es RUP; un resultado UNSAT termina con la cláusula vacía.
+pub fn solve_cdcl_with_proof(
+    formula: &[Vec<i32>],
+    config: ReignitionConfig,
+    proof: &mut dyn ProofLog,
+) -> (Option<Vec<i32>>, SolveStats) {
+    solve_cdcl_inner(formula, Some(config), Some(proof))
 }
 pub fn solve_cdcl_with_reignition(
     formula: &[Vec<i32>],
     config: ReignitionConfig,
 ) -> (Option<Vec<i32>>, SolveStats) {
-    solve_cdcl_inner(formula, Some(config))
+    solve_cdcl_inner(formula, Some(config), None)
 }
 fn solve_cdcl_inner(
     formula: &[Vec<i32>],
     config: Option<ReignitionConfig>,
+    proof: Option<&mut dyn ProofLog>,
 ) -> (Option<Vec<i32>>, SolveStats) {
     let feedback = active(config);
-    let prepared = prepare_formula(formula.to_vec(), feedback.map(|configuration| configuration.oracle));
+    let prepared = prepare_formula(formula, feedback.map(|configuration| configuration.oracle));
     let Some((mut state, variables)) = prepared else {
         return (None, SolveStats { conflicts: 1, ..SolveStats::default() });
     };
-    let control = SearchControl { cube: &[], cancel: None, sharing: None };
+    let control = SearchControl { cube: &[], cancel: None, sharing: None, proof };
     let (outcome, stats) = run_state(&mut state, &variables, feedback, control);
     match outcome {
         SearchOutcome::Sat(model) => (Some(model), stats),
@@ -1596,7 +2936,14 @@ fn search(
         return SearchOutcome::Cancelled;
     }
     // El certificado raiz evita reprocesar una cola contradictoria y cubos posteriores.
-    if state.root_unsat { return SearchOutcome::Unsat; }
+    if state.root_unsat {
+        // Dos unidades opuestas de la fórmula: la cláusula vacía es RUP.
+        if let Some(proof) = control.proof.as_deref_mut() {
+            proof.add(&[]);
+        }
+        return SearchOutcome::Unsat;
+    }
+    let mut line: Vec<i32> = Vec::new();
     if let Some(link) = control.sharing.as_deref_mut() {
         // Un cubo empieza en el nivel 0: mismo punto de sincronización que un restart.
         if state.level() == 0 {
@@ -1619,9 +2966,16 @@ fn search(
             if level == 0 {
                 // No se publica la cláusula vacía ni se confunde cancelación con UNSAT.
                 state.root_unsat = true;
+                if let Some(proof) = control.proof.as_deref_mut() {
+                    proof.add(&[]);
+                }
                 return SearchOutcome::Unsat;
             }
             let (backjump_level, lbd) = state.analyze(conflict);
+            if let Some(proof) = control.proof.as_deref_mut() {
+                external(variables, &state.learned, &mut line);
+                proof.add(&line);
+            }
             if lbd <= EXPORT_LBD {
                 if let Some(link) = control.sharing.as_deref_mut() {
                     // Los cubos son decisiones: toda cláusula aprendida es consecuencia global.
@@ -1635,7 +2989,7 @@ fn search(
             continue;
         }
         if state.conflicts >= state.next_cleanup {
-            state.reduce_database();
+            state.reduce_database(control.proof.as_deref_mut().map(|proof| (proof, variables)));
         }
         if let Some(configuration) = feedback {
             // Ignición inicial: primer fixpoint de la búsqueda, todavía en el nivel 0.
@@ -1748,7 +3102,7 @@ fn swarm_worker(
         }
         // Clausulas, unidades raiz, fases, actividades y oraculo sobreviven al cubo.
         state.stats = SolveStats::default();
-        let control = SearchControl { cube, cancel: Some(cancel), sharing: link.as_mut() };
+        let control = SearchControl { cube, cancel: Some(cancel), sharing: link.as_mut(), proof: None };
         let (outcome, stats) = run_state(&mut state, variables, feedback, control);
         report.total.add_search(stats);
         match outcome {
@@ -1767,7 +3121,7 @@ fn swarm_worker(
 pub fn solve_swarm(formula: &[Vec<i32>], config: SwarmConfig) -> (Option<Vec<i32>>, SwarmStats) {
     let mut stats = SwarmStats::default();
     let feedback = active(Some(config.reignition));
-    let prepared = prepare_formula(formula.to_vec(), feedback.map(|configuration| configuration.oracle));
+    let prepared = prepare_formula(formula, feedback.map(|configuration| configuration.oracle));
     let Some((mut base, variables)) = prepared else {
         stats.total.conflicts = 1;
         return (None, stats);
@@ -1845,7 +3199,7 @@ mod deterministic_import_tests {
     fn published_consequence_is_imported_and_promoted_to_root() {
         // (x1 OR x2) AND (x1 OR !x2) entails x1 without a syntactic unit.
         let formula = vec![vec![1, 2], vec![1, -2]];
-        let (mut state, variables) = prepare_formula(formula.clone(), None).unwrap();
+        let (mut state, variables) = prepare_formula(&formula, None).unwrap();
         let positive_x1 = 0;
 
         let pool = CloudPool::new(8);
@@ -1866,7 +3220,7 @@ mod deterministic_import_tests {
         }
 
         let mut link = Sharing::new(&pool, 0, 1);
-        let control = SearchControl { cube: &[], cancel: None, sharing: Some(&mut link) };
+        let control = SearchControl { cube: &[], cancel: None, sharing: Some(&mut link), proof: None };
         let (outcome, stats) = run_state(&mut state, &variables, None, control);
         let model = match outcome {
             SearchOutcome::Sat(model) => model,
@@ -1883,7 +3237,7 @@ mod deterministic_import_tests {
         // Siguiente cubo del mismo worker: cursor y filtro sobreviven, nada se reimporta.
         state.backjump(0);
         state.stats = SolveStats::default();
-        let control = SearchControl { cube: &[], cancel: None, sharing: Some(&mut link) };
+        let control = SearchControl { cube: &[], cancel: None, sharing: Some(&mut link), proof: None };
         let (_, stats) = run_state(&mut state, &variables, None, control);
         assert_eq!(stats.imported_clauses, 0);
         // Un lote nunca vuelve a su autor.
@@ -2000,18 +3354,46 @@ pub struct HybridConfig {
     pub oracle: OracleConfig,
     // Cero desactiva el oráculo sin cambiar el motor exacto.
     pub reignition_interval: usize,
+    // Ruptura estática de simetrías antes del oráculo y del CDCL.
+    pub symmetry: bool,
+    // Extracción de paridad y eliminación gaussiana antes del oráculo y del CDCL.
+    pub parity: bool,
 }
 
 impl Default for HybridConfig {
     fn default() -> Self {
         let reignition = cdcl::ReignitionConfig::default();
-        Self { oracle: reignition.oracle, reignition_interval: reignition.interval }
+        Self {
+            oracle: reignition.oracle, reignition_interval: reignition.interval,
+            symmetry: true, parity: true,
+        }
     }
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+pub struct SymmetryStats {
+    pub generators: usize,
+    pub clauses: usize,
+    pub ms: f64,
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+pub struct ParityStats {
+    pub equations: usize,
+    pub rank: usize,
+    pub units: usize,
+    pub equivalences: usize,
+    pub clauses: usize,
+    pub auxiliaries: usize,
+    pub refuted: bool,
+    pub ms: f64,
 }
 
 #[derive(Clone, Debug)]
 pub struct HybridReport {
     pub model: Option<Vec<i32>>,
+    pub symmetry: SymmetryStats,
+    pub parity: ParityStats,
     pub cdcl: SolveStats,
     pub cdcl_ms: f64,
 }
@@ -2019,8 +3401,69 @@ pub struct HybridReport {
 #[derive(Clone, Debug)]
 pub struct ParallelHybridReport {
     pub model: Option<Vec<i32>>,
+    pub symmetry: SymmetryStats,
+    pub parity: ParityStats,
     pub swarm: cdcl::SwarmStats,
     pub conquer_ms: f64,
+}
+
+// Capas de inprocessing. La fórmula que ven el oráculo y el CDCL lleva las consecuencias
+// lineales y los predicados de ruptura; el modelo se sigue verificando contra la original.
+// Ambas capas leen la fórmula original: la paridad solo añade consecuencias suyas, así que
+// no altera las simetrías ni la validez de sus predicados.
+fn preprocess<'f>(
+    formula: &'f [Clause], config: HybridConfig, mut proof: Option<&mut (dyn proof::ProofLog + '_)>,
+) -> (std::borrow::Cow<'f, [Clause]>, SymmetryStats, ParityStats) {
+    use std::borrow::Cow;
+    use std::time::Instant;
+    let mut added: Vec<Clause> = Vec::new();
+    let mut parity_stats = ParityStats::default();
+    if config.parity {
+        let start = Instant::now();
+        let reduction = parity::reduce_parity_with_proof(formula, proof.as_deref_mut());
+        parity_stats = ParityStats {
+            equations: reduction.equations,
+            rank: reduction.rank,
+            units: reduction.units,
+            equivalences: reduction.equivalences,
+            clauses: reduction.clauses.len(),
+            auxiliaries: reduction.auxiliaries,
+            refuted: reduction.refuted,
+            ms: start.elapsed().as_secs_f64() * 1000.0,
+        };
+        added = reduction.clauses;
+    }
+    let mut symmetry_stats = SymmetryStats::default();
+    // Con 0 = 1 ya demostrado no queda nada que romper. Con traza tampoco se rompe nada: un
+    // predicado de simetría no es RAT, y DRAT no tiene regla que lo justifique.
+    if config.symmetry && !parity_stats.refuted && proof.is_none() {
+        let start = Instant::now();
+        let breaking = symmetry::break_symmetries(formula);
+        symmetry_stats = SymmetryStats {
+            generators: breaking.generators.len(),
+            clauses: breaking.clauses.len(),
+            ms: start.elapsed().as_secs_f64() * 1000.0,
+        };
+        added.extend(breaking.clauses);
+    }
+    if added.is_empty() {
+        return (Cow::Borrowed(formula), symmetry_stats, parity_stats);
+    }
+    let mut extended = formula.to_vec();
+    extended.extend(added);
+    (Cow::Owned(extended), symmetry_stats, parity_stats)
+}
+
+// Las variables auxiliares de la paridad quedan por encima de todo identificador original.
+fn restrict(model: Option<Vec<i32>>, formula: &[Clause], parity: &ParityStats) -> Option<Vec<i32>> {
+    if parity.auxiliaries == 0 {
+        return model;
+    }
+    let last = formula.iter().flatten().map(|literal| literal.unsigned_abs()).max().unwrap_or(0);
+    model.map(|mut model| {
+        model.retain(|literal| literal.unsigned_abs() <= last);
+        model
+    })
 }
 
 pub fn solve_hybrid_parallel(
@@ -2030,11 +3473,13 @@ pub fn solve_hybrid_parallel(
     swarm.reignition = cdcl::ReignitionConfig {
         interval: config.reignition_interval, oracle: config.oracle,
     };
+    let (extended, symmetry, parity) = preprocess(formula, config, None);
     let start = Instant::now();
-    let (model, swarm) = cdcl::solve_swarm(formula, swarm);
+    let (model, swarm) = cdcl::solve_swarm(&extended, swarm);
     let conquer_ms = start.elapsed().as_secs_f64() * 1000.0;
+    let model = restrict(model, formula, &parity);
     if let Some(model) = &model { assert!(verify_model(formula, model)); }
-    ParallelHybridReport { model, swarm, conquer_ms }
+    ParallelHybridReport { model, symmetry, parity, swarm, conquer_ms }
 }
 
 pub fn verify_model(formula: &[Clause], model: &[i32]) -> bool {
@@ -2053,17 +3498,46 @@ pub fn verify_model(formula: &[Clause], model: &[i32]) -> bool {
 
 pub fn solve_hybrid(formula: &[Clause], config: HybridConfig) -> HybridReport {
     use std::time::Instant;
+    let (extended, symmetry, parity) = preprocess(formula, config, None);
     let start = Instant::now();
     // El oráculo vive dentro del CDCL y solo escribe fases; su modelo se verifica aquí.
     let feedback = cdcl::ReignitionConfig {
         interval: config.reignition_interval, oracle: config.oracle,
     };
-    let (model, cdcl) = cdcl::solve_cdcl_with_reignition(formula, feedback);
+    let (model, cdcl) = cdcl::solve_cdcl_with_reignition(&extended, feedback);
     let cdcl_ms = start.elapsed().as_secs_f64() * 1000.0;
+    let model = restrict(model, formula, &parity);
     if let Some(model) = &model {
         assert!(verify_model(formula, model), "Model must satisfy original clauses");
     }
-    HybridReport { model, cdcl, cdcl_ms }
+    HybridReport { model, symmetry, parity, cdcl, cdcl_ms }
+}
+
+// Como `solve_hybrid`, dejando en `proof` una traza DRAT de todo lo que se añade a la
+// fórmula: las derivaciones de la capa de paridad y cada cláusula aprendida o borrada por
+// el CDCL. La capa de simetría no participa, porque sus predicados no son expresables en
+// DRAT. Un resultado UNSAT termina con la cláusula vacía; un modelo no necesita traza.
+pub fn solve_hybrid_with_proof(
+    formula: &[Clause], config: HybridConfig, proof: &mut dyn proof::ProofLog,
+) -> HybridReport {
+    use std::time::Instant;
+    let (extended, symmetry, parity) = preprocess(formula, config, Some(&mut *proof));
+    let start = Instant::now();
+    let feedback = cdcl::ReignitionConfig {
+        interval: config.reignition_interval, oracle: config.oracle,
+    };
+    let (model, cdcl) = if parity.refuted {
+        // La derivación de 0 = 1 ya cerró la traza con la cláusula vacía.
+        (None, SolveStats { conflicts: 1, ..SolveStats::default() })
+    } else {
+        cdcl::solve_cdcl_with_proof(&extended, feedback, proof)
+    };
+    let cdcl_ms = start.elapsed().as_secs_f64() * 1000.0;
+    let model = restrict(model, formula, &parity);
+    if let Some(model) = &model {
+        assert!(verify_model(formula, model), "Model must satisfy original clauses");
+    }
+    HybridReport { model, symmetry, parity, cdcl, cdcl_ms }
 }
 
 fn run_case(name: &str, n: usize, formula: Formula, expected_sat: bool, compare_sharing: bool) {
@@ -2076,10 +3550,11 @@ fn run_case(name: &str, n: usize, formula: Formula, expected_sat: bool, compare_
     assert_eq!(serial.model.is_some(), expected_sat);
     if let Some(model) = &serial.model { assert!(verify_model(&formula, model)); }
     let serial_status = if serial.model.is_some() { "SAT" } else { "UNSAT" };
-    println!("{name},serial,{n},{},{serial_status},{serial_ms:.6},{:.6},{},{},{},{},{:.6},1,0,0,0,0,0,0,0,0,0,1.000000,0,0.0000",
+    println!("{name},serial,{n},{},{serial_status},{serial_ms:.6},{:.6},{},{},{},{},{:.6},1,0,0,0,0,0,0,0,0,0,1.000000,0,0.0000,{},{},{:.6}",
         formula.len(), serial.cdcl_ms, serial.cdcl.decisions,
         serial.cdcl.conflicts, serial.cdcl.reignitions, serial.cdcl.reignition_flips,
-        serial.cdcl.reignition_ms);
+        serial.cdcl.reignition_ms, serial.symmetry.generators, serial.symmetry.clauses,
+        serial.symmetry.ms);
     let mut no_share_decisions = None;
     for share_enabled in [false, true] {
         if !share_enabled && !compare_sharing { continue; }
@@ -2100,14 +3575,15 @@ fn run_case(name: &str, n: usize, formula: Formula, expected_sat: bool, compare_
         let mode = if share_enabled { "parallel_shared" } else { "parallel_private" };
         let speedup = serial_ms / elapsed_ms.max(f64::MIN_POSITIVE);
         // Trabajo total real: no se presupone que compartir reduzca decisiones o tiempo.
-        println!("{name},{mode},{n},{},{status},{elapsed_ms:.6},{:.6},{},{},{},{},{:.6},{},{},{},{},{},{},{},{},{},{},{speedup:.6},{},{reduction}",
+        println!("{name},{mode},{n},{},{status},{elapsed_ms:.6},{:.6},{},{},{},{},{:.6},{},{},{},{},{},{},{},{},{},{},{speedup:.6},{},{reduction},{},{},{:.6}",
             formula.len(), report.conquer_ms,
             total.decisions, total.conflicts, total.reignitions, total.reignition_flips,
             total.reignition_ms, stats.workers, stats.cubes_generated, stats.cubes_started,
             stats.cubes_unsat, stats.cubes_cancelled,
             total.exported_clauses, total.imported_clauses, total.dropped_exports,
             total.import_backjumps, stats.shared_clauses.len(),
-            no_share_decisions.map_or_else(|| "NA".to_owned(), |value| value.to_string()));
+            no_share_decisions.map_or_else(|| "NA".to_owned(), |value| value.to_string()),
+            report.symmetry.generators, report.symmetry.clauses, report.symmetry.ms);
     }
 }
 
@@ -2140,7 +3616,7 @@ fn pigeonhole_3sat(pigeons: usize, holes: usize) -> (usize, Formula) {
 }
 
 fn main() {
-    println!("case,mode,n,clauses,status,elapsed_ms,conquer_ms,decisions,conflicts,reignitions,reignition_flips,reignition_ms,workers,cubes_generated,cubes_started,cubes_unsat,cubes_cancelled,exports,imports,sharing_drops,import_backjumps,pool_clauses,speedup_vs_serial,private_decisions,decision_reduction_vs_private_pct");
+    println!("case,mode,n,clauses,status,elapsed_ms,conquer_ms,decisions,conflicts,reignitions,reignition_flips,reignition_ms,workers,cubes_generated,cubes_started,cubes_unsat,cubes_cancelled,exports,imports,sharing_drops,import_backjumps,pool_clauses,speedup_vs_serial,private_decisions,decision_reduction_vs_private_pct,symmetry_generators,symmetry_clauses,symmetry_ms");
     run_case("empty_formula", 0, vec![], true, false);
     run_case("contradictory_units", 1, vec![vec![1], vec![-1]], false, false);
     for n in [10_i32, 100, 1000] {

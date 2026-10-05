@@ -16,6 +16,8 @@ fn config(flips_per_variable: usize, reignition_interval: usize) -> HybridConfig
             seed: 0x1234_5678_9abc_def0,
         },
         reignition_interval,
+        symmetry: true,
+        parity: true,
     }
 }
 
@@ -109,7 +111,10 @@ fn a_disabled_oracle_leaves_the_plain_search_untouched() {
         vec![5, 6],
     ];
     let (plain_model, plain) = solve_cdcl(&formula);
-    for parameters in [config(0, 500), config(8, 0)] {
+    for mut parameters in [config(0, 500), config(8, 0)] {
+        // The bare engine runs no inprocessing, so the comparison must not either.
+        parameters.symmetry = false;
+        parameters.parity = false;
         let report = solve_hybrid(&formula, parameters);
         check_report(&formula, &report, parameters);
         assert_eq!(report.model, plain_model);
@@ -123,7 +128,8 @@ fn a_disabled_oracle_leaves_the_plain_search_untouched() {
 fn an_oracle_model_is_verified_and_ends_the_search() {
     // Disjoint clauses: local search satisfies them long before its budget runs out.
     let formula: Vec<Vec<i32>> = (1..=18).step_by(3).map(|v| vec![v, v + 1, v + 2]).collect();
-    let parameters = config(16, 500);
+    let mut parameters = config(16, 500);
+    parameters.symmetry = false;
     let report = solve_hybrid(&formula, parameters);
     check_report(&formula, &report, parameters);
     assert!(report.model.is_some());
@@ -261,18 +267,20 @@ fn pigeonhole(pigeons: usize, holes: usize) -> Vec<Vec<i32>> {
 }
 
 #[test]
-fn small_pigeonhole_is_exact_with_and_without_symmetry_recognition() {
+fn small_pigeonhole_is_exact_with_and_without_symmetry_breaking() {
     for (pigeons, holes) in [(2, 2), (3, 2), (3, 3), (4, 3)] {
-        for asymmetric in [false, true] {
+        for (symmetry, padded) in [(false, false), (true, false), (true, true)] {
             let mut formula = pigeonhole(pigeons, holes);
-            if asymmetric {
-                // Raw extra tautology disables the strict recognized-family preprocessor.
+            if padded {
+                // A tautology is not part of the structure: it must change nothing.
                 formula.push(vec![1, -1, 1]);
             }
-            let parameters = config(5, 1);
+            let mut parameters = config(5, 1);
+            parameters.symmetry = symmetry;
             let report = solve_hybrid(&formula, parameters);
             check_report(&formula, &report, parameters);
             assert_eq!(report.model.is_some(), pigeons <= holes);
+            assert_eq!(report.symmetry.clauses > 0, symmetry);
         }
     }
 }
@@ -317,6 +325,8 @@ fn the_oracle_seed_changes_the_walk_but_never_the_answer() {
             let parameters = HybridConfig {
                 oracle: OracleConfig { flips_per_variable: 2, seed },
                 reignition_interval: 1,
+                symmetry: seed % 2 == 0,
+                parity: seed % 4 < 2,
             };
             let report = solve_hybrid(&formula, parameters);
             check_report(&formula, &report, parameters);

@@ -6,6 +6,7 @@
 mod hybrid;
 
 use hybrid::cdcl::{solve_swarm, OracleConfig, ReignitionConfig, SwarmConfig, SwarmStats};
+use hybrid::{solve_hybrid_parallel, HybridConfig};
 use std::collections::{BTreeMap, BTreeSet};
 
 const FLIPS_PER_VARIABLE: usize = 1;
@@ -218,7 +219,8 @@ fn swarm_matches_small_exhaustive_truth_tables_with_sharing_on_and_off() {
     }
 }
 
-fn pigeonhole(pigeons: usize, holes: usize, disable_recognition: bool) -> Vec<Vec<i32>> {
+// The swarm entry point breaks no symmetries: pigeonhole stays a hard instance for it.
+fn pigeonhole(pigeons: usize, holes: usize) -> Vec<Vec<i32>> {
     let mut formula: Vec<Vec<i32>> = (0..pigeons)
         .map(|pigeon| {
             (0..holes)
@@ -236,33 +238,40 @@ fn pigeonhole(pigeons: usize, holes: usize, disable_recognition: bool) -> Vec<Ve
             }
         }
     }
-    if disable_recognition {
-        formula.push(vec![1, -1, 1]);
-    }
     formula
 }
 
 #[test]
 fn unsat_requires_every_generated_cube_to_be_processed() {
-    let formula = pigeonhole(4, 3, true);
+    let formula = pigeonhole(4, 3);
     for workers in [1, 2, 4] {
         for sharing in [false, true] {
             let stats = check(&formula, config(workers, sharing));
             assert!(stats.workers > 0);
             assert!(stats.cubes_generated > 1);
-            assert_eq!(stats.total.symmetry_clauses, 0);
         }
     }
 }
 
 #[test]
-fn certified_symmetry_is_applied_before_cubing() {
-    let formula = pigeonhole(4, 3, false);
-    let (model, stats) = solve_swarm(&formula, config(4, true));
-    assert!(model.is_none());
-    assert_eq!(stats.workers, 0);
-    assert_eq!(stats.cubes_started, 0);
-    assert!(stats.total.symmetry_clauses > 0);
+fn symmetry_breaking_runs_before_cubing_in_the_parallel_pipeline() {
+    let formula = pigeonhole(4, 3);
+    let parameters = HybridConfig::default();
+    let report = solve_hybrid_parallel(&formula, parameters, config(4, true));
+    assert!(report.model.is_none());
+    assert!(report.symmetry.generators > 0 && report.symmetry.clauses > 0);
+    // The predicates refute the instance at the root: no cube is ever generated.
+    assert_eq!(report.swarm.workers, 0);
+    assert_eq!(report.swarm.cubes_started, 0);
+
+    let report = solve_hybrid_parallel(
+        &formula,
+        HybridConfig { symmetry: false, ..parameters },
+        config(4, true),
+    );
+    assert!(report.model.is_none());
+    assert_eq!(report.symmetry.clauses, 0);
+    assert!(report.swarm.workers > 0);
 }
 
 // Equivalence chain plus one non-unit disjunction has exactly one model.
@@ -330,7 +339,7 @@ fn the_oracle_may_find_the_unique_model_before_any_cube_starts() {
 #[test]
 fn empty_and_single_slot_sharing_pools_finish_without_deadlock() {
     let formulas = [
-        pigeonhole(4, 3, true),
+        pigeonhole(4, 3),
         unique_model_without_units(6, 0b101101),
     ];
     for formula in formulas {
@@ -398,7 +407,7 @@ fn published_clauses_are_entailed_by_all_models_of_a_satisfiable_formula() {
 
 #[test]
 fn conflict_search_publishes_glue_clauses_and_reignites() {
-    let formula = pigeonhole(4, 3, true);
+    let formula = pigeonhole(4, 3);
     let mut parameters = config(2, true);
     parameters.cubes_per_worker = 1;
     parameters.share_capacity = 64;
@@ -413,7 +422,7 @@ fn conflict_search_publishes_glue_clauses_and_reignites() {
 
 #[test]
 fn shared_conflict_pool_preserves_unsat_with_persistent_workers() {
-    let formula = pigeonhole(6, 5, true);
+    let formula = pigeonhole(6, 5);
     let mut parameters = config(2, true);
     parameters.cubes_per_worker = 1;
     parameters.share_capacity = 128;
@@ -438,7 +447,7 @@ fn persistent_single_worker_keeps_learning_sound_across_multiple_cubes() {
     check_counters(&satisfiable, &stats, true, 1);
     assert_shared_clauses_are_global_consequences(&satisfiable, &stats);
 
-    let unsatisfiable = pigeonhole(4, 3, true);
+    let unsatisfiable = pigeonhole(4, 3);
     let mut parameters = config(1, true);
     parameters.cubes_per_worker = 8;
     let (model, stats) = solve_swarm(&unsatisfiable, parameters);

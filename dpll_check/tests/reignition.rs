@@ -68,7 +68,7 @@ fn assert_budgets(formula: &[Vec<i32>], stats: &SolveStats, flips_per_variable: 
     assert!(stats.reignition_ms.is_finite() && stats.reignition_ms >= 0.0);
 }
 
-fn counts(stats: &SolveStats) -> [usize; 14] {
+fn counts(stats: &SolveStats) -> [usize; 11] {
     [
         stats.decisions,
         stats.propagations,
@@ -79,9 +79,6 @@ fn counts(stats: &SolveStats) -> [usize; 14] {
         stats.restarts,
         stats.deleted_clauses,
         stats.database_reductions,
-        stats.symmetry_rows,
-        stats.symmetry_columns,
-        stats.symmetry_clauses,
         stats.reignitions,
         stats.reignition_flips,
     ]
@@ -105,8 +102,7 @@ fn pigeonhole(pigeons: usize, holes: usize) -> Vec<Vec<i32>> {
             }
         }
     }
-    // Extra raw tautology avoids the strict recognized-family preprocessor.
-    formula.push(vec![1, -1, 1]);
+    // The CDCL entry points break no symmetries: pigeonhole stays a hard instance here.
     formula
 }
 
@@ -118,7 +114,6 @@ fn the_oracle_ignites_without_compromising_the_unsat_proof() {
     assert!(stats.reignitions > 0);
     assert!(stats.learned_clauses > 0);
     assert!(stats.backjumps > 0);
-    assert_eq!(stats.symmetry_clauses, 0);
     assert_budgets(&formula, &stats, 2);
 }
 
@@ -253,6 +248,8 @@ fn hybrid_pipeline_exposes_the_oracle_counters() {
         HybridConfig {
             oracle: reignition(1, 2).oracle,
             reignition_interval: 1,
+            symmetry: false,
+            parity: false,
         },
     );
     assert!(report.model.is_none());
