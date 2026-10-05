@@ -79,6 +79,24 @@ fn preprocess<'f>(
     use std::borrow::Cow;
     use std::time::Instant;
     let mut added: Vec<Clause> = Vec::new();
+    let mut symmetry_stats = SymmetryStats::default();
+    let mut break_symmetry = |added: &mut Vec<Clause>, proof: Option<&mut (dyn proof::ProofLog + '_)>| {
+        let start = Instant::now();
+        let breaking = symmetry::break_symmetries_with_proof(formula, proof);
+        symmetry_stats = SymmetryStats {
+            generators: breaking.generators.len(),
+            clauses: breaking.clauses.len(),
+            ms: start.elapsed().as_secs_f64() * 1000.0,
+        };
+        added.extend(breaking.clauses);
+    };
+    // Con una traza que admite dominancia la simetría se certifica primero, sobre la
+    // fórmula intacta: lo que derive después la paridad no tiene por qué ser simétrico.
+    // Con una traza que no la admite, no se rompe ninguna simetría.
+    let certified = proof.is_some();
+    if config.symmetry && certified {
+        break_symmetry(&mut added, proof.as_deref_mut());
+    }
     let mut parity_stats = ParityStats::default();
     if config.parity {
         let start = Instant::now();
@@ -93,20 +111,11 @@ fn preprocess<'f>(
             refuted: reduction.refuted,
             ms: start.elapsed().as_secs_f64() * 1000.0,
         };
-        added = reduction.clauses;
+        added.extend(reduction.clauses);
     }
-    let mut symmetry_stats = SymmetryStats::default();
-    // Con 0 = 1 ya demostrado no queda nada que romper. Con traza tampoco se rompe nada: un
-    // predicado de simetría no es RAT, y DRAT no tiene regla que lo justifique.
-    if config.symmetry && !parity_stats.refuted && proof.is_none() {
-        let start = Instant::now();
-        let breaking = symmetry::break_symmetries(formula);
-        symmetry_stats = SymmetryStats {
-            generators: breaking.generators.len(),
-            clauses: breaking.clauses.len(),
-            ms: start.elapsed().as_secs_f64() * 1000.0,
-        };
-        added.extend(breaking.clauses);
+    // Sin traza, con 0 = 1 ya demostrado no queda nada que romper.
+    if config.symmetry && !certified && !parity_stats.refuted {
+        break_symmetry(&mut added, None);
     }
     if added.is_empty() {
         return (Cow::Borrowed(formula), symmetry_stats, parity_stats);
@@ -175,10 +184,11 @@ pub fn solve_hybrid(formula: &[Clause], config: HybridConfig) -> HybridReport {
     HybridReport { model, symmetry, parity, cdcl, cdcl_ms }
 }
 
-// Como `solve_hybrid`, dejando en `proof` una traza DRAT de todo lo que se añade a la
-// fórmula: las derivaciones de la capa de paridad y cada cláusula aprendida o borrada por
-// el CDCL. La capa de simetría no participa, porque sus predicados no son expresables en
-// DRAT. Un resultado UNSAT termina con la cláusula vacía; un modelo no necesita traza.
+// Como `solve_hybrid`, dejando en `proof` una traza de todo lo que se añade a la fórmula:
+// la dominancia de cada simetría, las derivaciones de la paridad y cada cláusula aprendida
+// o borrada por el CDCL. La capa de simetría solo participa si el formato tiene regla de
+// dominancia (`PbProof`); con DRAT no rompe nada. Un resultado UNSAT termina con la
+// cláusula vacía; un modelo no necesita traza.
 pub fn solve_hybrid_with_proof(
     formula: &[Clause], config: HybridConfig, proof: &mut dyn proof::ProofLog,
 ) -> HybridReport {
@@ -194,6 +204,9 @@ pub fn solve_hybrid_with_proof(
     } else {
         cdcl::solve_cdcl_with_proof(&extended, feedback, proof)
     };
+    if formula.iter().any(Vec::is_empty) {
+        proof.input_refuted();
+    }
     let cdcl_ms = start.elapsed().as_secs_f64() * 1000.0;
     let model = restrict(model, formula, &parity);
     if let Some(model) = &model {

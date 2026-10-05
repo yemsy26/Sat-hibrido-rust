@@ -8,6 +8,7 @@
 // satisfacibilidad. Cada permutación candidata se comprueba cláusula a cláusula antes de
 // usarse: la búsqueda es heurística, la verificación no.
 use std::collections::HashMap;
+use super::proof::ProofLog;
 use std::hash::{BuildHasherDefault, Hasher};
 
 pub type Clause = Vec<i32>;
@@ -737,7 +738,12 @@ fn discover(graph: &Graph) -> (Vec<Permutation>, Vec<u32>) {
 // movida u, (pares anteriores iguales) ⇒ u ≤ σ(u). Se emite con el antecedente reforzado
 // «pares anteriores ambos falsos»: sigue siendo consecuencia del predicado y no necesita
 // variables auxiliares. Si F ya contiene (¬u ∨ ¬σ(u)), la resolución elimina σ(u).
-fn lex_leader(graph: &Graph, permutation: &Permutation, rank: &[u32], emitted: &mut Vec<Vec<u32>>) {
+// `heads` recibe la variable u de cada cláusula emitida: son las únicas que el orden de
+// una traza necesita comparar.
+fn lex_leader(
+    graph: &Graph, permutation: &Permutation, rank: &[u32],
+    emitted: &mut Vec<Vec<u32>>, heads: &mut Vec<u32>,
+) {
     let mut pairs = permutation.clone();
     pairs.sort_unstable_by_key(|&(variable, _)| rank[variable as usize]);
     let mut prefix: Vec<u32> = Vec::new();
@@ -750,6 +756,7 @@ fn lex_leader(graph: &Graph, permutation: &Permutation, rank: &[u32], emitted: &
                 break;
             }
             conjuncts += 1;
+            heads.push(variable);
             let mut clause = prefix.clone();
             clause.push(smaller | 1);
             let mut exclusion = [smaller | 1, larger | 1];
@@ -770,26 +777,103 @@ fn lex_leader(graph: &Graph, permutation: &Permutation, rank: &[u32], emitted: &
 }
 
 pub fn break_symmetries(formula: &[Clause]) -> SymmetryBreaking {
-    if formula.iter().any(Vec::is_empty) {
+    break_symmetries_with_proof(formula, None)
+}
+
+// Bytes de traza admitidos para el orden y las dominancias. Los pesos del orden son
+// potencias de dos en decimal, así que el coste crece con el cuadrado de las variables
+// ordenadas; lo que no cabe no se certifica y, por tanto, no se rompe.
+const DOMINANCE_BUDGET: usize = 1 << 26;
+
+// Número de generadores, en su orden, cuya certificación cabe en el presupuesto.
+fn affordable(breakers: &[Permutation], heads: &[u32], ends: &[(usize, usize)], variables: usize) -> usize {
+    let mut kept = breakers.len();
+    let mut ordered = vec![false; variables];
+    while kept > 0 {
+        ordered.fill(false);
+        let mut count = 0;
+        for &variable in &heads[..ends[kept - 1].1] {
+            count += usize::from(!std::mem::replace(&mut ordered[variable as usize], true));
+        }
+        // Dos términos por variable ordenada en la definición y por cada una que mueve un
+        // generador, con pesos de hasta 0.302 dígitos por variable; el testigo es lineal.
+        let mut terms = count;
+        let mut witness = 0;
+        for permutation in &breakers[..kept] {
+            terms += permutation.iter().filter(|&&(variable, _)| ordered[variable as usize]).count();
+            witness += permutation.len();
+        }
+        if 2 * terms * (count * 3 / 10 + 12) + 24 * witness <= DOMINANCE_BUDGET {
+            break;
+        }
+        kept /= 2;
+    }
+    kept
+}
+
+// Con traza, cada automorfismo se justifica por dominancia antes de sus predicados. El
+// orden de la prueba son las cabezas de las cadenas lex-leader, en su mismo orden global:
+// bajo la negación de un predicado, las posiciones anteriores a su cabeza que σ mueve
+// valen cero, la cabeza resta su peso y las posteriores no llegan a compensarlo, así que
+// el predicado es RUP a partir de z ≤lex σ(z). Un formato sin regla de dominancia no puede
+// certificar nada de esto: no se rompe nada.
+pub fn break_symmetries_with_proof(
+    formula: &[Clause], mut proof: Option<&mut (dyn ProofLog + '_)>,
+) -> SymmetryBreaking {
+    let unsupported = proof.as_ref().is_some_and(|log| !log.supports_dominance());
+    if unsupported || formula.iter().any(Vec::is_empty) {
         return SymmetryBreaking { generators: Vec::new(), clauses: Vec::new() };
     }
     let graph = Graph::new(formula);
-    let (breakers, rank) = discover(&graph);
+    let (mut breakers, rank) = discover(&graph);
+    let id = |variable: u32| graph.ids[variable as usize];
+    let signed = |literal: u32| {
+        let variable = id(literal >> 1) as i32;
+        if literal & 1 == 0 { variable } else { -variable }
+    };
     let mut emitted = Vec::new();
+    // Dónde acaban las cláusulas y las cabezas de cada generador.
+    let mut heads = Vec::new();
+    let mut ends = Vec::with_capacity(breakers.len());
     for permutation in &breakers {
-        lex_leader(&graph, permutation, &rank, &mut emitted);
+        lex_leader(&graph, permutation, &rank, &mut emitted, &mut heads);
+        ends.push((emitted.len(), heads.len()));
+    }
+    if let Some(log) = proof.as_deref_mut() {
+        let kept = affordable(&breakers, &heads, &ends, graph.ids.len());
+        breakers.truncate(kept);
+        ends.truncate(kept);
+        let (clauses, ordered) = ends.last().copied().unwrap_or((0, 0));
+        emitted.truncate(clauses);
+        heads.truncate(ordered);
+        heads.sort_unstable_by_key(|&variable| rank[variable as usize]);
+        heads.dedup();
+        if !heads.is_empty() {
+            log.order(&heads.iter().map(|&variable| id(variable) as i32).collect::<Vec<i32>>());
+        }
+        let mut line: Vec<i32> = Vec::new();
+        let mut first = 0;
+        for (permutation, &(end, _)) in breakers.iter().zip(&ends) {
+            if end > first {
+                let pairs: Vec<(i32, i32)> = permutation.iter()
+                    .map(|&(variable, image)| (id(variable) as i32, id(image) as i32)).collect();
+                log.dominance(&pairs);
+                for clause in &emitted[first..end] {
+                    line.clear();
+                    line.extend(clause.iter().map(|&literal| signed(literal)));
+                    log.add(&line);
+                }
+            }
+            first = end;
+        }
     }
     emitted.sort_unstable();
     emitted.dedup();
     emitted.retain(|clause| !graph.contains(clause));
-    let id = |variable: u32| graph.ids[variable as usize];
     SymmetryBreaking {
         generators: breakers.iter().map(|permutation| {
             permutation.iter().map(|&(variable, image)| (id(variable), id(image))).collect()
         }).collect(),
-        clauses: emitted.iter().map(|clause| clause.iter().map(|&literal| {
-            let variable = id(literal >> 1) as i32;
-            if literal & 1 == 0 { variable } else { -variable }
-        }).collect()).collect(),
+        clauses: emitted.iter().map(|clause| clause.iter().map(|&literal| signed(literal)).collect()).collect(),
     }
 }

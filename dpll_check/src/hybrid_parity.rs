@@ -300,10 +300,11 @@ impl Prover<'_> {
     // sobre él (las dos primeras porque `out` aún no aparece; las otras por resolventes
     // tautológicas).
     fn define(&mut self, out: i32, previous: i32, variable: i32) {
-        self.emit(&[-out, previous, variable]);
-        self.emit(&[-out, -previous, -variable]);
-        self.emit(&[out, -previous, variable]);
-        self.emit(&[out, previous, -variable]);
+        self.emitted += 4;
+        self.log.define(&[-out, previous, variable]);
+        self.log.define(&[-out, -previous, -variable]);
+        self.log.define(&[out, -previous, variable]);
+        self.log.define(&[out, previous, -variable]);
     }
     // Cadena de una ecuación original. La unidad final sale por casos sobre sus variables:
     // con todas asignadas la propagación recorre la cadena o falsea una cláusula original,
