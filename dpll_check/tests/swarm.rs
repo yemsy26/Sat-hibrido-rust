@@ -5,9 +5,10 @@
 #[path = "../src/hybrid.rs"]
 mod hybrid;
 
-use hybrid::cdcl::{solve_swarm, ReignitionConfig, SwarmConfig, SwarmStats};
-use hybrid::gradient::GradientConfig;
+use hybrid::cdcl::{solve_swarm, OracleConfig, ReignitionConfig, SwarmConfig, SwarmStats};
 use std::collections::{BTreeMap, BTreeSet};
+
+const FLIPS_PER_VARIABLE: usize = 1;
 
 fn config(workers: usize, sharing: bool) -> SwarmConfig {
     SwarmConfig {
@@ -18,16 +19,19 @@ fn config(workers: usize, sharing: bool) -> SwarmConfig {
         share_enabled: sharing,
         reignition: ReignitionConfig {
             interval: 1,
-            oracle: GradientConfig {
-                max_epochs: 1,
-                restarts: 1,
-                check_every: 1,
-                ..GradientConfig::default()
+            oracle: OracleConfig {
+                flips_per_variable: FLIPS_PER_VARIABLE,
+                ..OracleConfig::default()
             },
         },
-        activity_boost: 4.0,
-        ..SwarmConfig::default()
     }
+}
+
+// Without the oracle no model is found before cubing, so the cube machinery always runs.
+fn config_without_oracle(workers: usize, sharing: bool) -> SwarmConfig {
+    let mut parameters = config(workers, sharing);
+    parameters.reignition.interval = 0;
+    parameters
 }
 
 fn check_model(formula: &[Vec<i32>], model: &[i32]) {
@@ -46,14 +50,18 @@ fn check_model(formula: &[Vec<i32>], model: &[i32]) {
     );
 }
 
-fn brute_force(formula: &[Vec<i32>]) -> bool {
-    let variables: Vec<u32> = formula
+fn variable_ids(formula: &[Vec<i32>]) -> Vec<u32> {
+    formula
         .iter()
         .flatten()
         .map(|v| v.unsigned_abs())
         .collect::<BTreeSet<_>>()
         .into_iter()
-        .collect();
+        .collect()
+}
+
+fn brute_force(formula: &[Vec<i32>]) -> bool {
+    let variables = variable_ids(formula);
     assert!(variables.len() <= 20);
     (0..1_u64 << variables.len()).any(|bits| {
         formula.iter().all(|clause| {
@@ -65,21 +73,16 @@ fn brute_force(formula: &[Vec<i32>]) -> bool {
     })
 }
 
+// Export is driven by quality (LBD <= 2), so a shared lemma may have any width.
 fn assert_shared_clauses_are_global_consequences(formula: &[Vec<i32>], stats: &SwarmStats) {
-    let variables: Vec<u32> = formula
-        .iter()
-        .flatten()
-        .map(|v| v.unsigned_abs())
-        .collect::<BTreeSet<_>>()
-        .into_iter()
-        .collect();
+    let variables = variable_ids(formula);
     assert!(variables.len() <= 20);
     assert!(
         brute_force(formula),
         "Consequence checks must have a nonvacuous SAT premise"
     );
     for clause in &stats.shared_clauses {
-        assert!(!clause.is_empty() && clause.len() <= 3);
+        assert!(!clause.is_empty());
         assert!(clause.iter().all(|literal| literal.unsigned_abs() != 0
             && variables.binary_search(&literal.unsigned_abs()).is_ok()));
         for bits in 0..1_u64 << variables.len() {
@@ -98,12 +101,22 @@ fn assert_shared_clauses_are_global_consequences(formula: &[Vec<i32>], stats: &S
     }
 }
 
-fn check_counters(stats: &SwarmStats, expected_sat: bool, requested_workers: usize) {
+fn check_counters(
+    formula: &[Vec<i32>],
+    stats: &SwarmStats,
+    expected_sat: bool,
+    requested_workers: usize,
+) {
     assert!(stats.workers <= requested_workers);
     assert!(stats.cubes_started <= stats.cubes_generated);
     assert!(stats.cubes_unsat + stats.cubes_cancelled <= stats.cubes_started);
     assert!(stats.total.reignition_ms.is_finite() && stats.total.reignition_ms >= 0.0);
-    assert!(stats.total.reignition_epochs <= stats.total.reignitions);
+    // Every oracle run stays within its flip budget.
+    assert!(
+        stats.total.reignition_flips
+            <= stats.total.reignitions * FLIPS_PER_VARIABLE * variable_ids(formula).len()
+    );
+    assert_eq!(stats.total.import_backjumps, 0);
     if stats.workers == 0 {
         assert_eq!(stats.cubes_started, 0);
         assert_eq!(stats.cubes_cancelled, 0);
@@ -122,19 +135,19 @@ fn check_counters(stats: &SwarmStats, expected_sat: bool, requested_workers: usi
     }
 }
 
-fn check(formula: &[Vec<i32>], workers: usize, sharing: bool) -> SwarmStats {
+fn check(formula: &[Vec<i32>], parameters: SwarmConfig) -> SwarmStats {
     let expected = brute_force(formula);
-    let (model, stats) = solve_swarm(formula, None, config(workers, sharing));
+    let (model, stats) = solve_swarm(formula, parameters);
     assert_eq!(
         model.is_some(),
         expected,
-        "workers={workers}, sharing={sharing}, formula={formula:?}"
+        "parameters={parameters:?}, formula={formula:?}"
     );
     if let Some(model) = model {
         check_model(formula, &model);
     }
-    check_counters(&stats, expected, workers);
-    if !sharing {
+    check_counters(formula, &stats, expected, parameters.workers);
+    if !parameters.share_enabled {
         assert_eq!(stats.total.exported_clauses, 0);
         assert_eq!(stats.total.imported_clauses, 0);
         assert_eq!(stats.total.dropped_exports, 0);
@@ -151,7 +164,7 @@ fn root_sat_and_root_unsat_do_not_spawn_workers() {
         (vec![vec![]], false),
         (vec![vec![1], vec![-1]], false),
     ] {
-        let (model, stats) = solve_swarm(&formula, None, config(4, true));
+        let (model, stats) = solve_swarm(&formula, config(4, true));
         assert_eq!(model.is_some(), expected_sat);
         if let Some(model) = model {
             check_model(&formula, &model);
@@ -196,7 +209,9 @@ fn swarm_matches_small_exhaustive_truth_tables_with_sharing_on_and_off() {
                 .collect();
             for workers in [1, 2, 4] {
                 for sharing in [false, true] {
-                    check(&formula, workers, sharing);
+                    // With the oracle a model may appear before cubing; without it, cubes decide.
+                    check(&formula, config(workers, sharing));
+                    check(&formula, config_without_oracle(workers, sharing));
                 }
             }
         }
@@ -232,7 +247,7 @@ fn unsat_requires_every_generated_cube_to_be_processed() {
     let formula = pigeonhole(4, 3, true);
     for workers in [1, 2, 4] {
         for sharing in [false, true] {
-            let stats = check(&formula, workers, sharing);
+            let stats = check(&formula, config(workers, sharing));
             assert!(stats.workers > 0);
             assert!(stats.cubes_generated > 1);
             assert_eq!(stats.total.symmetry_clauses, 0);
@@ -243,7 +258,7 @@ fn unsat_requires_every_generated_cube_to_be_processed() {
 #[test]
 fn certified_symmetry_is_applied_before_cubing() {
     let formula = pigeonhole(4, 3, false);
-    let (model, stats) = solve_swarm(&formula, None, config(4, true));
+    let (model, stats) = solve_swarm(&formula, config(4, true));
     assert!(model.is_none());
     assert_eq!(stats.workers, 0);
     assert_eq!(stats.cubes_started, 0);
@@ -272,33 +287,43 @@ fn unique_model_without_units(n: usize, bits: usize) -> Vec<Vec<i32>> {
 
 #[test]
 fn unsatisfiable_cubes_cannot_poison_the_unique_satisfiable_cube() {
-    for bits in [0b000000, 0b101010, 0b111111] {
+    // Default phases are positive, so for these models the first cube opposes the solution.
+    for bits in [0b000000, 0b101010, 0b010101] {
         let formula = unique_model_without_units(6, bits);
-        let guidance: Vec<(u32, f64)> = (0..6)
-            .map(|index| {
-                // Deliberately oppose every bit of the unique satisfying model.
-                (
-                    (index + 1) as u32,
-                    if bits & (1 << index) != 0 { 0.01 } else { 0.99 },
-                )
-            })
-            .collect();
         for sharing in [false, true] {
-            let mut parameters = config(4, sharing);
+            let mut parameters = config_without_oracle(4, sharing);
             parameters.cubes_per_worker = 8;
             parameters.share_capacity = 1;
-            let (model, stats) = solve_swarm(&formula, Some(&guidance), parameters);
+            let (model, stats) = solve_swarm(&formula, parameters);
             let model = model.expect(
                 "Sharing a cube-specific contradiction must not make the base SAT formula UNSAT",
             );
             check_model(&formula, &model);
-            check_counters(&stats, true, 4);
+            check_counters(&formula, &stats, true, 4);
             if sharing {
                 assert!(!stats.shared_clauses.is_empty(),
-                    "The first cube opposes the unique model and must publish a global short clause");
+                    "The first cube opposes the unique model and must publish a global lemma");
             }
             assert_shared_clauses_are_global_consequences(&formula, &stats);
         }
+    }
+}
+
+#[test]
+fn the_oracle_may_find_the_unique_model_before_any_cube_starts() {
+    for bits in [0b000000, 0b101010, 0b111111] {
+        let formula = unique_model_without_units(6, bits);
+        let mut parameters = config(4, true);
+        // Enough flips for a six-variable walk; fewer would simply hand over to the cubes.
+        parameters.reignition.oracle.flips_per_variable = 64;
+        let (model, stats) = solve_swarm(&formula, parameters);
+        check_model(&formula, &model.expect("The formula has exactly one model"));
+        assert!(stats.total.reignitions > 0);
+        if stats.workers == 0 {
+            assert_eq!(stats.cubes_started, 0);
+            assert_eq!(stats.total.decisions, 0);
+        }
+        assert_shared_clauses_are_global_consequences(&formula, &stats);
     }
 }
 
@@ -313,12 +338,12 @@ fn empty_and_single_slot_sharing_pools_finish_without_deadlock() {
         for capacity in [0, 1] {
             let mut parameters = config(4, true);
             parameters.share_capacity = capacity;
-            let (model, stats) = solve_swarm(&formula, None, parameters);
+            let (model, stats) = solve_swarm(&formula, parameters);
             assert_eq!(model.is_some(), expected);
             if let Some(model) = model {
                 check_model(&formula, &model);
             }
-            check_counters(&stats, expected, 4);
+            check_counters(&formula, &stats, expected, 4);
             assert!(stats.shared_clauses.len() <= capacity);
             if capacity == 0 {
                 assert_eq!(stats.total.exported_clauses, 0);
@@ -329,7 +354,7 @@ fn empty_and_single_slot_sharing_pools_finish_without_deadlock() {
 }
 
 #[test]
-fn sparse_ids_tautologies_repeated_literals_and_bad_priors_remain_exact() {
+fn sparse_ids_tautologies_and_repeated_literals_remain_exact() {
     let high = i32::MAX;
     let cases = [
         vec![
@@ -342,15 +367,9 @@ fn sparse_ids_tautologies_repeated_literals_and_bad_priors_remain_exact() {
         vec![vec![high, 19], vec![-high, -19], vec![7, -7]],
     ];
     for formula in cases {
-        let guidance = [(7, 0.01), (19, 0.99), (high as u32, 0.01)];
         for sharing in [false, true] {
-            let (model, stats) = solve_swarm(&formula, Some(&guidance), config(4, sharing));
-            let expected = brute_force(&formula);
-            assert_eq!(model.is_some(), expected);
-            if let Some(model) = model {
-                check_model(&formula, &model);
-            }
-            check_counters(&stats, expected, 4);
+            check(&formula, config(4, sharing));
+            check(&formula, config_without_oracle(4, sharing));
         }
     }
 }
@@ -367,31 +386,28 @@ fn published_clauses_are_entailed_by_all_models_of_a_satisfiable_formula() {
         vec![5, -5],
     ];
     for workers in [2, 4] {
-        let mut parameters = config(workers, true);
+        let mut parameters = config_without_oracle(workers, true);
         parameters.share_capacity = 64;
         parameters.cubes_per_worker = 8;
-        let (model, stats) = solve_swarm(&formula, None, parameters);
+        let (model, stats) = solve_swarm(&formula, parameters);
         check_model(&formula, &model.unwrap());
-        check_counters(&stats, true, workers);
+        check_counters(&formula, &stats, true, workers);
         assert_shared_clauses_are_global_consequences(&formula, &stats);
     }
 }
 
 #[test]
-fn conflict_search_publishes_short_clauses_and_reignites() {
+fn conflict_search_publishes_glue_clauses_and_reignites() {
     let formula = pigeonhole(4, 3, true);
     let mut parameters = config(2, true);
     parameters.cubes_per_worker = 1;
     parameters.share_capacity = 64;
-    let (model, stats) = solve_swarm(&formula, None, parameters);
+    let (model, stats) = solve_swarm(&formula, parameters);
     assert!(model.is_none());
-    check_counters(&stats, false, 2);
+    check_counters(&formula, &stats, false, 2);
     assert!(stats.total.exported_clauses > 0);
     assert!(!stats.shared_clauses.is_empty());
-    assert!(stats
-        .shared_clauses
-        .iter()
-        .all(|clause| !clause.is_empty() && clause.len() <= 3));
+    assert!(stats.shared_clauses.iter().all(|clause| !clause.is_empty()));
     assert!(stats.total.reignitions > 0);
 }
 
@@ -401,33 +417,35 @@ fn shared_conflict_pool_preserves_unsat_with_persistent_workers() {
     let mut parameters = config(2, true);
     parameters.cubes_per_worker = 1;
     parameters.share_capacity = 128;
-    let (model, stats) = solve_swarm(&formula, None, parameters);
+    let (model, stats) = solve_swarm(&formula, parameters);
     assert!(model.is_none());
-    check_counters(&stats, false, 2);
+    check_counters(&formula, &stats, false, 2);
     assert!(stats.total.exported_clauses > 0);
+    // Quality-based export admits lemmas wider than three literals.
+    assert!(stats.shared_clauses.iter().all(|clause| !clause.is_empty()));
 }
 
 #[test]
 fn persistent_single_worker_keeps_learning_sound_across_multiple_cubes() {
-    let satisfiable = unique_model_without_units(6, 0b101010);
-    let guidance: Vec<(u32, f64)> = (0..6).map(|index| {
-        ((index + 1) as u32, if 0b101010 & (1 << index) != 0 { 0.01 } else { 0.99 })
-    }).collect();
-    let mut parameters = config(1, true);
+    // The all-false model sits in the last cube: every earlier cube must be refuted first.
+    let satisfiable = unique_model_without_units(6, 0b000000);
+    let mut parameters = config_without_oracle(1, true);
     parameters.cubes_per_worker = 8;
-    let (model, stats) = solve_swarm(&satisfiable, Some(&guidance), parameters);
+    let (model, stats) = solve_swarm(&satisfiable, parameters);
     check_model(&satisfiable, &model.unwrap());
     assert_eq!(stats.workers, 1);
     assert!(stats.cubes_generated >= 4 && stats.cubes_started >= 4);
-    check_counters(&stats, true, 1);
+    check_counters(&satisfiable, &stats, true, 1);
     assert_shared_clauses_are_global_consequences(&satisfiable, &stats);
 
     let unsatisfiable = pigeonhole(4, 3, true);
-    let (model, stats) = solve_swarm(&unsatisfiable, None, parameters);
+    let mut parameters = config(1, true);
+    parameters.cubes_per_worker = 8;
+    let (model, stats) = solve_swarm(&unsatisfiable, parameters);
     assert!(model.is_none());
     assert_eq!(stats.workers, 1);
     assert!(stats.cubes_generated >= 4);
     assert_eq!(stats.cubes_started, stats.cubes_generated);
     assert_eq!(stats.cubes_unsat, stats.cubes_generated);
-    check_counters(&stats, false, 1);
+    check_counters(&unsatisfiable, &stats, false, 1);
 }

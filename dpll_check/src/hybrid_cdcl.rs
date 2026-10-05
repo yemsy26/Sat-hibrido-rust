@@ -1,5 +1,4 @@
 use std::collections::{HashSet, VecDeque};
-use super::gradient::{GradientConfig, OracleWorkspace};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
@@ -21,7 +20,7 @@ pub struct SolveStats {
     pub symmetry_columns: usize,
     pub symmetry_clauses: usize,
     pub reignitions: usize,
-    pub reignition_epochs: usize,
+    pub reignition_flips: usize,
     pub reignition_ms: f64,
     pub exported_clauses: usize,
     pub imported_clauses: usize,
@@ -42,7 +41,7 @@ impl SolveStats {
         self.deleted_clauses += other.deleted_clauses;
         self.database_reductions += other.database_reductions;
         self.reignitions += other.reignitions;
-        self.reignition_epochs += other.reignition_epochs;
+        self.reignition_flips += other.reignition_flips;
         self.reignition_ms += other.reignition_ms;
         self.exported_clauses += other.exported_clauses;
         self.imported_clauses += other.imported_clauses;
@@ -51,16 +50,25 @@ impl SolveStats {
     }
 }
 #[derive(Clone, Copy, Debug)]
+pub struct OracleConfig {
+    // Tope de flips por variable en cada ejecución; 0 desactiva el oráculo.
+    pub flips_per_variable: usize,
+    pub seed: u64,
+}
+impl Default for OracleConfig {
+    fn default() -> Self {
+        Self { flips_per_variable: 16, seed: 0x243f_6a88_85a3_08d3 }
+    }
+}
+#[derive(Clone, Copy, Debug)]
 pub struct ReignitionConfig {
+    // Conflictos mínimos entre ejecuciones del oráculo; 0 lo desactiva.
     pub interval: usize,
-    pub oracle: GradientConfig,
+    pub oracle: OracleConfig,
 }
 impl Default for ReignitionConfig {
     fn default() -> Self {
-        Self {
-            interval: 500,
-            oracle: GradientConfig { max_epochs: 100, restarts: 1, ..GradientConfig::default() },
-        }
+        Self { interval: 500, oracle: OracleConfig::default() }
     }
 }
 #[derive(Clone, Copy, Debug)]
@@ -72,7 +80,6 @@ pub struct SwarmConfig {
     // Conflictos mínimos entre sincronizaciones; se importa solo al reiniciar.
     pub share_interval: usize,
     pub reignition: ReignitionConfig,
-    pub activity_boost: f64,
     pub share_enabled: bool,
 }
 impl Default for SwarmConfig {
@@ -83,7 +90,6 @@ impl Default for SwarmConfig {
             share_capacity: 8192,
             share_interval: 64,
             reignition: ReignitionConfig::default(),
-            activity_boost: 4.0,
             share_enabled: true,
         }
     }
@@ -432,6 +438,217 @@ fn inject_pigeonhole_symmetry(formula: &mut Formula, variables: &[u32]) -> (usiz
     }
     (pigeons, holes, formula.len() - before)
 }
+// Pesos enteros de probSAT, 2^16 * 2.06^(-roturas): cuanto más rompe un flip, menos probable.
+const BREAK_WEIGHTS: [u64; 16] =
+    [65536, 31814, 15443, 7497, 3639, 1767, 858, 416, 202, 98, 48, 23, 11, 5, 3, 1];
+// Oráculo discreto: búsqueda local estocástica sobre bits, sin aritmética flotante.
+#[derive(Clone)]
+struct Walker {
+    literals: Vec<u32>,
+    offsets: Vec<u32>,
+    occurrences: Vec<u32>,
+    occurrence_offsets: Vec<u32>,
+    values: Vec<bool>,
+    fixed: Vec<bool>,
+    // Literales verdaderos de cada cláusula y su XOR: con uno solo, el XOR es ese literal.
+    satisfied: Vec<u32>,
+    critical: Vec<u32>,
+    breaks: Vec<u32>,
+    unsat: Vec<u32>,
+    slots: Vec<u32>,
+    // Mejor asignación vista y variables volteadas desde ella dentro de la ráfaga en curso.
+    best: usize,
+    best_values: Vec<bool>,
+    journal: Vec<u32>,
+    synced: usize,
+    rng: u64,
+}
+impl Walker {
+    fn new(variables: usize, literals: Vec<u32>, offsets: Vec<u32>, seed: u64) -> Self {
+        let clauses = offsets.len() - 1;
+        let mut occurrence_offsets = vec![0_u32; 2 * variables + 1];
+        for &literal in &literals {
+            occurrence_offsets[literal as usize + 1] += 1;
+        }
+        for literal in 0..2 * variables {
+            occurrence_offsets[literal + 1] += occurrence_offsets[literal];
+        }
+        let mut cursor = occurrence_offsets.clone();
+        let mut occurrences = vec![0_u32; literals.len()];
+        for clause in 0..clauses {
+            for &literal in &literals[offsets[clause] as usize..offsets[clause + 1] as usize] {
+                occurrences[cursor[literal as usize] as usize] = clause as u32;
+                cursor[literal as usize] += 1;
+            }
+        }
+        let mut walker = Self {
+            literals, offsets, occurrences, occurrence_offsets,
+            values: vec![false; variables],
+            fixed: vec![false; variables],
+            satisfied: vec![0; clauses],
+            critical: vec![0; clauses],
+            breaks: vec![0; variables],
+            unsat: Vec::new(),
+            slots: vec![NONE; clauses],
+            best: 0,
+            best_values: Vec::new(),
+            journal: Vec::new(),
+            synced: 0,
+            rng: seed.wrapping_mul(0x9e37_79b9_7f4a_7c15) | 1,
+        };
+        // Asignación inicial aleatoria.
+        for variable in 0..variables {
+            walker.values[variable] = walker.next() >> 63 == 1;
+        }
+        for clause in 0..clauses {
+            let (mut count, mut xor) = (0, 0);
+            for position in walker.offsets[clause] as usize..walker.offsets[clause + 1] as usize {
+                let literal = walker.literals[position];
+                if walker.values[variable_of(literal)] == (literal & 1 == 0) {
+                    count += 1;
+                    xor ^= literal;
+                }
+            }
+            walker.satisfied[clause] = count;
+            walker.critical[clause] = xor;
+            match count {
+                0 => walker.violate(clause),
+                1 => walker.breaks[variable_of(xor)] += 1,
+                _ => {}
+            }
+        }
+        walker.settle();
+        walker
+    }
+    fn next(&mut self) -> u64 {
+        self.rng ^= self.rng << 13;
+        self.rng ^= self.rng >> 7;
+        self.rng ^= self.rng << 17;
+        self.rng.wrapping_mul(0x2545_f491_4f6c_dd1d)
+    }
+    fn reseed(&mut self, salt: u64) {
+        self.rng = (self.rng ^ salt.wrapping_mul(0x9e37_79b9_7f4a_7c15)) | 1;
+    }
+    // La asignación actual pasa a ser la referencia: se usa tras fijar literales de la raíz.
+    fn settle(&mut self) {
+        self.best = self.unsat.len();
+        self.best_values.clone_from(&self.values);
+        self.journal.clear();
+    }
+    fn violate(&mut self, clause: usize) {
+        self.slots[clause] = self.unsat.len() as u32;
+        self.unsat.push(clause as u32);
+    }
+    fn repair(&mut self, clause: usize) {
+        let slot = self.slots[clause];
+        let last = self.unsat.pop().expect("A violated clause is listed");
+        if last as usize != clause {
+            self.unsat[slot as usize] = last;
+            self.slots[last as usize] = slot;
+        }
+        self.slots[clause] = NONE;
+    }
+    // Coste proporcional a las ocurrencias de la variable, no al tamaño de la fórmula.
+    fn flip(&mut self, variable: usize) {
+        let gained = ((variable as u32) << 1) | u32::from(self.values[variable]);
+        let lost = gained ^ 1;
+        self.values[variable] = !self.values[variable];
+        let range = self.occurrence_offsets[gained as usize]..self.occurrence_offsets[gained as usize + 1];
+        for index in range {
+            let clause = self.occurrences[index as usize] as usize;
+            let before = self.satisfied[clause];
+            self.satisfied[clause] = before + 1;
+            match before {
+                0 => {
+                    self.repair(clause);
+                    self.breaks[variable] += 1;
+                }
+                // El antiguo único verdadero deja de ser crítico.
+                1 => self.breaks[variable_of(self.critical[clause])] -= 1,
+                _ => {}
+            }
+            self.critical[clause] ^= gained;
+        }
+        let range = self.occurrence_offsets[lost as usize]..self.occurrence_offsets[lost as usize + 1];
+        for index in range {
+            let clause = self.occurrences[index as usize] as usize;
+            let after = self.satisfied[clause] - 1;
+            self.satisfied[clause] = after;
+            self.critical[clause] ^= lost;
+            match after {
+                0 => {
+                    self.violate(clause);
+                    self.breaks[variable] -= 1;
+                }
+                // El verdadero que queda pasa a ser crítico.
+                1 => self.breaks[variable_of(self.critical[clause])] += 1,
+                _ => {}
+            }
+        }
+    }
+    fn fix(&mut self, literal: u32) {
+        let variable = variable_of(literal);
+        if self.values[variable] != (literal & 1 == 0) {
+            self.flip(variable);
+        }
+        self.fixed[variable] = true;
+    }
+    #[inline]
+    fn weight(&self, variable: usize) -> u64 {
+        if self.fixed[variable] {
+            0
+        } else {
+            BREAK_WEIGHTS[(self.breaks[variable] as usize).min(BREAK_WEIGHTS.len() - 1)]
+        }
+    }
+    // Ráfaga probSAT: cláusula violada al azar y flip con probabilidad decreciente en roturas.
+    // La caminata continúa entre ráfagas; `best_values` conserva la mejor asignación vista.
+    fn walk(&mut self, flips: usize, cancel: Option<&AtomicBool>) -> usize {
+        let mut done = 0;
+        let mut improved = false;
+        self.journal.clear();
+        while done < flips && !self.unsat.is_empty() {
+            if done & 4095 == 4095 && cancel.is_some_and(|flag| flag.load(Ordering::Acquire)) {
+                break;
+            }
+            let draw = self.next();
+            let clause = self.unsat[(draw % self.unsat.len() as u64) as usize] as usize;
+            let (start, end) = (self.offsets[clause] as usize, self.offsets[clause + 1] as usize);
+            let total: u64 = (start..end).map(|position| self.weight(variable_of(self.literals[position]))).sum();
+            // Todos sus literales son falsos en la raíz: el CDCL ya tiene ese conflicto.
+            if total == 0 {
+                break;
+            }
+            let mut pick = self.next() % total;
+            for position in start..end {
+                let variable = variable_of(self.literals[position]);
+                let weight = self.weight(variable);
+                if pick < weight {
+                    self.flip(variable);
+                    if improved {
+                        self.journal.push(variable as u32);
+                    }
+                    break;
+                }
+                pick -= weight;
+            }
+            done += 1;
+            if self.unsat.len() < self.best {
+                self.best = self.unsat.len();
+                self.journal.clear();
+                improved = true;
+            }
+        }
+        if improved {
+            // La mejor asignación es la actual deshaciendo los flips posteriores a ella.
+            self.best_values.clone_from(&self.values);
+            for &variable in &self.journal {
+                self.best_values[variable as usize] = !self.best_values[variable as usize];
+            }
+        }
+        done
+    }
+}
 const DECAY: f64 = 0.95;
 const CLEANUP_INTERVAL: u64 = 64;
 const MAX_ACTIVITY: f64 = 1e100;
@@ -450,6 +667,9 @@ const RESTART_MARGIN: f64 = 1.1;
 const RESTART_INTERVAL: u64 = 2;
 const LUBY_UNIT: u64 = 1024;
 const MODE_INTERVAL: u64 = 1000;
+// Tras la ignición inicial el oráculo gasta como mucho un flip por cada ORACLE_EFFORT
+// literales propagados: su coste queda acotado por el trabajo del CDCL, no por V.
+const ORACLE_EFFORT: u64 = 8;
 #[derive(Clone, Copy)]
 struct Watcher {
     blocker: u32,
@@ -630,7 +850,6 @@ struct State {
     head: usize,
     scores: Vec<f64>,
     increment: f64,
-    activity_scale: f64,
     heap: Heap,
     queue: Queue,
     stable: bool,
@@ -649,6 +868,11 @@ struct State {
     next_mode: u64,
     cleanup_interval: u64,
     next_cleanup: u64,
+    walker: Option<Walker>,
+    next_reignition: u64,
+    ignited: bool,
+    propagated: u64,
+    reignition_mark: u64,
     root_unsat: bool,
     stats: SolveStats,
 }
@@ -666,7 +890,6 @@ impl State {
             head: 0,
             scores: vec![0.0; variables],
             increment: 1.0,
-            activity_scale: 1.0,
             heap: Heap::new(variables),
             queue: Queue::new(variables),
             stable: false,
@@ -685,6 +908,11 @@ impl State {
             next_mode: MODE_INTERVAL,
             cleanup_interval: CLEANUP_INTERVAL,
             next_cleanup: CLEANUP_INTERVAL,
+            walker: None,
+            next_reignition: 0,
+            ignited: false,
+            propagated: 0,
+            reignition_mark: 0,
             root_unsat: false,
             stats,
         }
@@ -750,6 +978,7 @@ impl State {
         while self.head < self.trail.len() {
             let false_literal = self.trail[self.head] ^ 1;
             self.head += 1;
+            self.propagated += 1;
             let mut watchers = std::mem::take(&mut self.watches[false_literal as usize]);
             let mut conflict = None;
             let (mut read, mut write) = (0, 0);
@@ -1124,26 +1353,42 @@ impl State {
         };
         Some((variable << 1) | u32::from(self.phases[variable as usize]))
     }
-    fn refresh_guidance(&mut self, tensor: &[f64], activity_boost: f64) {
-        assert_eq!(tensor.len(), self.levels.len());
-        for (variable, &value) in tensor.iter().enumerate() {
-            assert!(value.is_finite() && (0.0..=1.0).contains(&value));
-            if self.values[variable << 1] != 0 {
-                continue;
+    // El oráculo solo lee las unidades de la raíz y solo escribe fases:
+    // nunca toca valores, antecedentes, watches ni el trail.
+    fn reignite(&mut self, configuration: ReignitionConfig, cancel: Option<&AtomicBool>) -> bool {
+        let Some(mut walker) = self.walker.take() else { return false; };
+        let started = Instant::now();
+        let root = self.trail_limits.first().copied().unwrap_or(self.trail.len());
+        if walker.synced < root {
+            for &literal in &self.trail[walker.synced..root] {
+                walker.fix(literal);
             }
-            self.phases[variable] = u8::from(value < 0.5);
-            // El bonus se mide en incrementos EVSIDS vigentes; el orden VMTF no se toca.
-            let bonus = (activity_boost.min(MAX_ACTIVITY) * (value - 0.5).abs()
-                * self.activity_scale).min(MAX_ACTIVITY) * self.increment;
-            self.scores[variable] = (self.scores[variable] + bonus).min(MAX_ACTIVITY);
-            if self.heap.contains(variable as u32) {
-                self.heap.increase(variable as u32, &self.scores);
-            }
+            walker.synced = root;
+            walker.settle();
         }
-        // No se modifica ningún valor, antecedente, watch, nivel ni entrada del trail.
+        let mut budget = configuration.oracle.flips_per_variable.saturating_mul(self.phases.len());
+        if self.ignited {
+            let earned = (self.propagated - self.reignition_mark) / ORACLE_EFFORT;
+            budget = budget.min(usize::try_from(earned).unwrap_or(usize::MAX));
+        }
+        self.reignition_mark = self.propagated;
+        let flips = walker.walk(budget, cancel);
+        // Transferencia: la mejor asignación del oráculo sobrescribe las polaridades guardadas.
+        for (phase, &value) in self.phases.iter_mut().zip(&walker.best_values) {
+            *phase = u8::from(!value);
+        }
+        let solved = walker.best == 0;
+        self.walker = Some(walker);
+        self.ignited = true;
+        self.next_reignition = self.conflicts.saturating_add(configuration.interval as u64);
+        self.stats.reignitions += 1;
+        self.stats.reignition_flips += flips;
+        self.stats.reignition_ms += started.elapsed().as_secs_f64() * 1000.0;
+        solved
     }
-    fn assignment(&self) -> Vec<i8> {
-        self.values.iter().step_by(2).copied().collect()
+    fn oracle_model(&self, variables: &[u32]) -> Vec<i32> {
+        let walker = self.walker.as_ref().expect("Only the oracle reports its own model");
+        signed_model(variables, walker.best_values.iter().copied())
     }
     // Candidatas: aprendidas con LBD > 2 que no son razón ni se usaron desde la última reducción.
     fn reduce_database(&mut self) {
@@ -1216,11 +1461,12 @@ impl State {
         self.stats.database_reductions += 1;
     }
 }
-fn prepare_formula(
-    mut formula: Formula,
-    guidance: Option<&[(u32, f64)]>,
-    activity_boost: f64,
-) -> Option<(State, Vec<u32>)> {
+fn active(config: Option<ReignitionConfig>) -> Option<ReignitionConfig> {
+    config.filter(|configuration| {
+        configuration.interval != 0 && configuration.oracle.flips_per_variable != 0
+    })
+}
+fn prepare_formula(mut formula: Formula, oracle: Option<OracleConfig>) -> Option<(State, Vec<u32>)> {
     if formula.iter().any(Vec::is_empty) {
         return None;
     }
@@ -1240,6 +1486,9 @@ fn prepare_formula(
         ..SolveStats::default()
     });
     let mut packed: Vec<u32> = Vec::new();
+    // Copia plana para el oráculo; las unidades le llegan después por el trail raíz.
+    let mut walk_literals = Vec::new();
+    let mut walk_offsets = vec![0_u32];
     for clause in &formula {
         packed.clear();
         packed.extend(clause.iter().map(|&literal| {
@@ -1257,25 +1506,16 @@ fn prepare_formula(
             state.scores[variable_of(literal)] += 1.0;
         }
         state.add_original(&packed);
+        if oracle.is_some() && packed.len() > 1 {
+            walk_literals.extend_from_slice(&packed);
+            walk_offsets.push(u32::try_from(walk_literals.len())
+                .expect("Oracle arena exceeds 2^32 literals"));
+        }
     }
     if state.root_unsat {
         state.stats.conflicts = 1;
-    }
-    // Referencia fija: el feedback no multiplica boosts anteriores.
-    state.activity_scale = state.scores.iter().copied().fold(1.0_f64, f64::max);
-    if let Some(prior) = guidance {
-        assert!(prior.windows(2).all(|pair| pair[0].0 < pair[1].0));
-        let scale = state.activity_scale;
-        for &(id, value) in prior {
-            assert!(value.is_finite() && (0.0..=1.0).contains(&value));
-            if let Ok(variable) = variables.binary_search(&id) {
-                state.phases[variable] = u8::from(value < 0.5);
-                // Saturar antes del producto evita inf*0 y mantiene el ordenamiento finito.
-                let bonus = (activity_boost.min(MAX_ACTIVITY)
-                    * (value - 0.5).abs() * scale).min(MAX_ACTIVITY);
-                state.scores[variable] = (state.scores[variable] + bonus).min(MAX_ACTIVITY);
-            }
-        }
+    } else if let Some(oracle) = oracle {
+        state.walker = Some(Walker::new(variables.len(), walk_literals, walk_offsets, oracle.seed));
     }
     // Orden VMTF inicial: al frente la mayor puntuación y, a igualdad, el menor índice.
     let mut order: Vec<u32> = (0..variables.len() as u32).collect();
@@ -1288,54 +1528,47 @@ fn prepare_formula(
     state.queue.search = state.queue.last;
     Some((state, variables))
 }
-pub fn solve_cdcl(
-    formula: &[Vec<i32>],
-    guidance: Option<&[(u32, f64)]>,
-    activity_boost: f64,
-) -> (Option<Vec<i32>>, SolveStats) {
-    solve_cdcl_inner(formula, guidance, activity_boost, None)
+pub fn solve_cdcl(formula: &[Vec<i32>]) -> (Option<Vec<i32>>, SolveStats) {
+    solve_cdcl_inner(formula, None)
 }
 pub fn solve_cdcl_with_reignition(
     formula: &[Vec<i32>],
-    guidance: Option<&[(u32, f64)]>,
-    activity_boost: f64,
     config: ReignitionConfig,
 ) -> (Option<Vec<i32>>, SolveStats) {
-    solve_cdcl_inner(formula, guidance, activity_boost, Some(config))
+    solve_cdcl_inner(formula, Some(config))
 }
 fn solve_cdcl_inner(
     formula: &[Vec<i32>],
-    guidance: Option<&[(u32, f64)]>,
-    activity_boost: f64,
     config: Option<ReignitionConfig>,
 ) -> (Option<Vec<i32>>, SolveStats) {
-    assert!(activity_boost.is_finite() && activity_boost >= 0.0);
-    let Some((mut state, variables)) = prepare_formula(formula.to_vec(), guidance, activity_boost) else {
+    let feedback = active(config);
+    let prepared = prepare_formula(formula.to_vec(), feedback.map(|configuration| configuration.oracle));
+    let Some((mut state, variables)) = prepared else {
         return (None, SolveStats { conflicts: 1, ..SolveStats::default() });
     };
     let control = SearchControl { cube: &[], cancel: None, sharing: None };
-    let (outcome, stats) = run_state(&mut state, &variables, formula, guidance, activity_boost, config, control);
+    let (outcome, stats) = run_state(&mut state, &variables, feedback, control);
     match outcome {
         SearchOutcome::Sat(model) => (Some(model), stats),
         SearchOutcome::Unsat => (None, stats),
         SearchOutcome::Cancelled => unreachable!("Serial execution cannot be cancelled"),
     }
 }
-fn extract_model(state: &State, variables: &[u32]) -> Vec<i32> {
-    variables.iter().zip(state.values.iter().step_by(2)).map(|(&id, &value)| {
-        if value == 1 { id as i32 } else { -(id as i32) }
+fn signed_model(variables: &[u32], values: impl Iterator<Item = bool>) -> Vec<i32> {
+    variables.iter().zip(values).map(|(&id, value)| {
+        if value { id as i32 } else { -(id as i32) }
     }).collect()
+}
+fn extract_model(state: &State, variables: &[u32]) -> Vec<i32> {
+    signed_model(variables, state.values.iter().step_by(2).map(|&value| value == 1))
 }
 fn run_state(
     state: &mut State,
     variables: &[u32],
-    formula: &[Vec<i32>],
-    guidance: Option<&[(u32, f64)]>,
-    activity_boost: f64,
-    config: Option<ReignitionConfig>,
+    feedback: Option<ReignitionConfig>,
     mut control: SearchControl<'_, '_>,
 ) -> (SearchOutcome, SolveStats) {
-    let outcome = search(state, variables, formula, guidance, activity_boost, config, &mut control);
+    let outcome = search(state, variables, feedback, &mut control);
     if let Some(link) = control.sharing {
         // Lo aprendido en este cubo se publica entero antes de soltar el estado.
         link.flush(&mut state.stats, true);
@@ -1345,10 +1578,7 @@ fn run_state(
 fn search(
     state: &mut State,
     variables: &[u32],
-    formula: &[Vec<i32>],
-    guidance: Option<&[(u32, f64)]>,
-    activity_boost: f64,
-    config: Option<ReignitionConfig>,
+    feedback: Option<ReignitionConfig>,
     control: &mut SearchControl<'_, '_>,
 ) -> SearchOutcome {
     // La cancelación se consulta una vez por conflicto o decisión, nunca dentro del BCP.
@@ -1359,9 +1589,6 @@ fn search(
     }
     // El certificado raiz evita reprocesar una cola contradictoria y cubos posteriores.
     if state.root_unsat { return SearchOutcome::Unsat; }
-    let feedback = config.filter(|configuration| configuration.interval != 0);
-    let mut next_feedback = feedback.map_or(usize::MAX, |configuration| configuration.interval);
-    let mut workspace: Option<OracleWorkspace> = None;
     if let Some(link) = control.sharing.as_deref_mut() {
         // Un cubo empieza en el nivel 0: mismo punto de sincronización que un restart.
         if state.level() == 0 {
@@ -1403,32 +1630,9 @@ fn search(
             state.reduce_database();
         }
         if let Some(configuration) = feedback {
-            if state.stats.conflicts >= next_feedback {
-                let started = Instant::now();
-                let oracle = workspace.get_or_insert_with(|| {
-                    let mut initial: Vec<f64> = state.phases.iter()
-                        .map(|&phase| if phase == 0 { 1.0 } else { 0.0 }).collect();
-                    if let Some(prior) = guidance {
-                        for &(id, value) in prior {
-                            if let Ok(variable) = variables.binary_search(&id) {
-                                initial[variable] = value;
-                            }
-                        }
-                    }
-                    OracleWorkspace::new(formula, &initial)
-                });
-                let assignment = state.assignment();
-                let (updates, interrupted) = if let Some(cancel) = cancel {
-                    oracle.reignite_with_cancel(&assignment, configuration.oracle, cancel)
-                } else {
-                    (oracle.reignite(&assignment, configuration.oracle), false)
-                };
-                state.stats.reignitions += 1;
-                state.stats.reignition_epochs += updates;
-                state.stats.reignition_ms += started.elapsed().as_secs_f64() * 1000.0;
-                if interrupted { return SearchOutcome::Cancelled; }
-                state.refresh_guidance(oracle.values(), activity_boost);
-                next_feedback = state.stats.conflicts.saturating_add(configuration.interval);
+            // Ignición inicial: primer fixpoint de la búsqueda, todavía en el nivel 0.
+            if !state.ignited && state.reignite(configuration, cancel) {
+                return SearchOutcome::Sat(state.oracle_model(variables));
             }
         }
         if state.level() < control.cube.len() {
@@ -1463,6 +1667,14 @@ fn search(
                     state.absorb(&mut link.inbox);
                 }
             }
+            if let Some(configuration) = feedback {
+                // Re-ignición: solo aquí, con el trail recién limpiado por el restart.
+                if state.conflicts >= state.next_reignition && !state.root_unsat
+                    && state.reignite(configuration, cancel)
+                {
+                    return SearchOutcome::Sat(state.oracle_model(variables));
+                }
+            }
             continue;
         }
         let Some(literal) = state.decide() else {
@@ -1483,7 +1695,7 @@ fn make_cubes(base: &State, config: SwarmConfig) -> Vec<Vec<u32>> {
     let mut depth = 0;
     while depth < candidates.len().min(10) && (1 << depth) < target { depth += 1; }
     candidates.truncate(depth);
-    // Todas las combinaciones: la guía ordena cubos y nunca descarta ninguno.
+    // Todas las combinaciones: las fases ordenan los cubos y nunca descartan ninguno.
     (0..1usize << depth).map(|mask| candidates.iter().enumerate().map(|(index, &variable)| {
         ((variable as u32) << 1) | (u32::from(base.phases[variable]) ^ ((mask >> index) & 1) as u32)
     }).collect()).collect()
@@ -1499,8 +1711,6 @@ struct WorkerReport {
 fn swarm_worker(
     base: &State,
     variables: &[u32],
-    formula: &[Vec<i32>],
-    guidance: Option<&[(u32, f64)]>,
     cubes: &[Vec<u32>],
     next: &AtomicUsize,
     cancel: &AtomicBool,
@@ -1510,6 +1720,11 @@ fn swarm_worker(
 ) -> WorkerReport {
     let mut report = WorkerReport::default();
     let mut state = base.clone();
+    // Cada worker continúa la caminata del estado base con su propio azar.
+    if let Some(walker) = state.walker.as_mut() {
+        walker.reseed(u64::from(owner) + 1);
+    }
+    let feedback = active(Some(config.reignition));
     // El contexto de intercambio vive lo que el worker, no lo que un cubo.
     let mut link = (config.share_enabled && config.share_capacity != 0)
         .then(|| Sharing::new(pool, owner, config.share_interval.max(1) as u64));
@@ -1523,11 +1738,10 @@ fn swarm_worker(
             debug_assert_eq!(state.head, state.trail.len());
             state.backjump(0);
         }
-        // Clausulas, razones/unidades raiz, fases y actividades sobreviven al cubo.
+        // Clausulas, unidades raiz, fases, actividades y oraculo sobreviven al cubo.
         state.stats = SolveStats::default();
         let control = SearchControl { cube, cancel: Some(cancel), sharing: link.as_mut() };
-        let (outcome, stats) = run_state(&mut state, variables, formula, guidance,
-            config.activity_boost, Some(config.reignition), control);
+        let (outcome, stats) = run_state(&mut state, variables, feedback, control);
         report.total.add_search(stats);
         match outcome {
             SearchOutcome::Sat(model) => {
@@ -1542,14 +1756,11 @@ fn swarm_worker(
     }
     report
 }
-pub fn solve_swarm(
-    formula: &[Vec<i32>],
-    guidance: Option<&[(u32, f64)]>,
-    config: SwarmConfig,
-) -> (Option<Vec<i32>>, SwarmStats) {
-    assert!(config.activity_boost.is_finite() && config.activity_boost >= 0.0);
+pub fn solve_swarm(formula: &[Vec<i32>], config: SwarmConfig) -> (Option<Vec<i32>>, SwarmStats) {
     let mut stats = SwarmStats::default();
-    let Some((mut base, variables)) = prepare_formula(formula.to_vec(), guidance, config.activity_boost) else {
+    let feedback = active(Some(config.reignition));
+    let prepared = prepare_formula(formula.to_vec(), feedback.map(|configuration| configuration.oracle));
+    let Some((mut base, variables)) = prepared else {
         stats.total.conflicts = 1;
         return (None, stats);
     };
@@ -1557,13 +1768,22 @@ pub fn solve_swarm(
         base.root_unsat = true;
         base.stats.conflicts += 1;
     }
-    stats.total = base.stats;
     if base.root_unsat {
+        stats.total = base.stats;
         return (None, stats);
     }
     if base.trail.len() == variables.len() {
+        stats.total = base.stats;
         return (Some(extract_model(&base, &variables)), stats);
     }
+    if let Some(configuration) = feedback {
+        // Ignición única antes de cubicar: las fases del oráculo ordenan los cubos.
+        if base.reignite(configuration, None) {
+            stats.total = base.stats;
+            return (Some(base.oracle_model(&variables)), stats);
+        }
+    }
+    stats.total = base.stats;
     let cubes = make_cubes(&base, config);
     stats.cubes_generated = cubes.len();
     let workers = config.workers.max(1).min(cubes.len());
@@ -1576,7 +1796,7 @@ pub fn solve_swarm(
             if cancel.load(Ordering::Acquire) { break; }
             let (base, variables, cubes, next, cancel, pool) =
                 (&base, variables.as_slice(), cubes.as_slice(), &next, &cancel, &pool);
-            let worker = move || swarm_worker(base, variables, formula, guidance, cubes,
+            let worker = move || swarm_worker(base, variables, cubes,
                 next, cancel, pool, config, owner as u32);
             match std::thread::Builder::new().name(format!("swarm-{owner}"))
                 .spawn_scoped(scope, worker) {
@@ -1585,7 +1805,7 @@ pub fn solve_swarm(
             }
         }
         if handles.is_empty() {
-            return (0, vec![swarm_worker(&base, &variables, formula, guidance, &cubes,
+            return (0, vec![swarm_worker(&base, &variables, &cubes,
                 &next, &cancel, &pool, config, 0)]);
         }
         let spawned = handles.len();
@@ -1617,7 +1837,7 @@ mod deterministic_import_tests {
     fn published_consequence_is_imported_and_promoted_to_root() {
         // (x1 OR x2) AND (x1 OR !x2) entails x1 without a syntactic unit.
         let formula = vec![vec![1, 2], vec![1, -2]];
-        let (mut state, variables) = prepare_formula(formula.clone(), None, 4.0).unwrap();
+        let (mut state, variables) = prepare_formula(formula.clone(), None).unwrap();
         let positive_x1 = 0;
 
         let pool = CloudPool::new(8);
@@ -1639,8 +1859,7 @@ mod deterministic_import_tests {
 
         let mut link = Sharing::new(&pool, 0, 1);
         let control = SearchControl { cube: &[], cancel: None, sharing: Some(&mut link) };
-        let (outcome, stats) = run_state(
-            &mut state, &variables, &formula, None, 4.0, None, control);
+        let (outcome, stats) = run_state(&mut state, &variables, None, control);
         let model = match outcome {
             SearchOutcome::Sat(model) => model,
             _ => panic!("Importing a valid consequence must preserve SAT"),
@@ -1657,7 +1876,7 @@ mod deterministic_import_tests {
         state.backjump(0);
         state.stats = SolveStats::default();
         let control = SearchControl { cube: &[], cancel: None, sharing: Some(&mut link) };
-        let (_, stats) = run_state(&mut state, &variables, &formula, None, 4.0, None, control);
+        let (_, stats) = run_state(&mut state, &variables, None, control);
         assert_eq!(stats.imported_clauses, 0);
         // Un lote nunca vuelve a su autor.
         peer.exchange(0, &mut peer_stats);
@@ -1684,5 +1903,80 @@ mod deterministic_import_tests {
         assert_eq!(seen, vec![vec![4, 15]]);
         // El filtro reconoce la misma cláusula en cualquier orden de literales.
         assert!(!reader.remember(&[15, 4]));
+    }
+
+    fn violations(walker: &Walker, values: &[bool]) -> usize {
+        (0..walker.offsets.len() - 1).filter(|&clause| {
+            let range = walker.offsets[clause] as usize..walker.offsets[clause + 1] as usize;
+            !walker.literals[range].iter().any(|&literal| values[variable_of(literal)] == (literal & 1 == 0))
+        }).count()
+    }
+
+    #[test]
+    fn walker_counters_survive_fixing_and_walking() {
+        let variables = 12_usize;
+        let mut seed = 0x9e37_79b9_u64;
+        let mut literals = Vec::new();
+        let mut offsets = vec![0_u32];
+        for _ in 0..60 {
+            let mut clause: Vec<u32> = (0..3).map(|_| {
+                seed ^= seed << 13;
+                seed ^= seed >> 7;
+                seed ^= seed << 17;
+                (seed % (2 * variables as u64)) as u32
+            }).collect();
+            clause.sort_unstable();
+            clause.dedup();
+            if clause.len() < 2 || clause.windows(2).any(|pair| pair[0] ^ 1 == pair[1]) {
+                continue;
+            }
+            literals.extend_from_slice(&clause);
+            offsets.push(literals.len() as u32);
+        }
+        let mut walker = Walker::new(variables, literals, offsets, 7);
+        // x3 verdadero y x6 falso quedan fijados como unidades de la raíz.
+        walker.fix(4);
+        walker.fix(11);
+        walker.settle();
+        let start = walker.best;
+        assert!(walker.walk(400, None) <= 400);
+        assert!(walker.best <= start);
+        assert!(walker.values[2] && !walker.values[5]);
+        assert!(walker.best_values[2] && !walker.best_values[5]);
+        // Recuento desde cero: verdaderos, críticos, roturas y lista de violadas.
+        let mut breaks = vec![0_u32; variables];
+        let mut violated = Vec::new();
+        for clause in 0..walker.offsets.len() - 1 {
+            let range = walker.offsets[clause] as usize..walker.offsets[clause + 1] as usize;
+            let truths: Vec<u32> = walker.literals[range].iter().copied()
+                .filter(|&literal| walker.values[variable_of(literal)] == (literal & 1 == 0)).collect();
+            assert_eq!(walker.satisfied[clause] as usize, truths.len());
+            assert_eq!(walker.critical[clause], truths.iter().fold(0, |xor, &literal| xor ^ literal));
+            match truths[..] {
+                [] => violated.push(clause as u32),
+                [only] => breaks[variable_of(only)] += 1,
+                _ => {}
+            }
+        }
+        assert_eq!(walker.breaks, breaks);
+        let mut listed = walker.unsat.clone();
+        listed.sort_unstable();
+        assert_eq!(listed, violated);
+        // La asignación guardada es exactamente tan buena como dice `best`.
+        assert_eq!(violations(&walker, &walker.best_values), walker.best);
+    }
+
+    #[test]
+    fn oracle_model_ends_the_search_before_any_decision() {
+        let formula: Vec<Vec<i32>> = (1..=30).step_by(3).map(|v| vec![v, v + 1, v + 2]).collect();
+        let config = ReignitionConfig {
+            interval: 1,
+            oracle: OracleConfig { flips_per_variable: 8, seed: 5 },
+        };
+        let (model, stats) = solve_cdcl_with_reignition(&formula, config);
+        let model = model.expect("Disjoint clauses are satisfiable");
+        assert!(formula.iter().all(|clause| clause.iter().any(|literal| model.contains(literal))));
+        assert_eq!((stats.decisions, stats.conflicts, stats.reignitions), (0, 0, 1));
+        assert!(stats.reignition_flips <= 8 * 30);
     }
 }

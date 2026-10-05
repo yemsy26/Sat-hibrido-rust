@@ -5,21 +5,17 @@
 #[path = "../src/hybrid.rs"]
 mod hybrid;
 
-use hybrid::gradient::{solve_gradient, CompiledFormula, GradientConfig};
+use hybrid::cdcl::{solve_cdcl, OracleConfig};
 use hybrid::{solve_hybrid, HybridConfig, HybridReport};
 use std::collections::{BTreeMap, BTreeSet};
 
-fn config(max_epochs: usize, activity_boost: f64) -> HybridConfig {
+fn config(flips_per_variable: usize, reignition_interval: usize) -> HybridConfig {
     HybridConfig {
-        oracle: GradientConfig {
-            max_epochs,
-            restarts: 1,
-            check_every: 1,
+        oracle: OracleConfig {
+            flips_per_variable,
             seed: 0x1234_5678_9abc_def0,
-            ..GradientConfig::default()
         },
-        activity_boost,
-        ..HybridConfig::default()
+        reignition_interval,
     }
 }
 
@@ -39,14 +35,18 @@ fn check_model(formula: &[Vec<i32>], model: &[i32]) {
     );
 }
 
-fn brute_force(formula: &[Vec<i32>]) -> bool {
-    let variables: Vec<u32> = formula
+fn variable_ids(formula: &[Vec<i32>]) -> Vec<u32> {
+    formula
         .iter()
         .flatten()
         .map(|literal| literal.unsigned_abs())
         .collect::<BTreeSet<_>>()
         .into_iter()
-        .collect();
+        .collect()
+}
+
+fn brute_force(formula: &[Vec<i32>]) -> bool {
+    let variables = variable_ids(formula);
     assert!(variables.len() <= 20);
     (0..1_u64 << variables.len()).any(|bits| {
         formula.iter().all(|clause| {
@@ -58,67 +58,78 @@ fn brute_force(formula: &[Vec<i32>]) -> bool {
     })
 }
 
-fn check_report(formula: &[Vec<i32>], report: &HybridReport, budget: usize) {
+fn check_report(formula: &[Vec<i32>], report: &HybridReport, parameters: HybridConfig) {
     assert_eq!(report.model.is_some(), brute_force(formula), "{formula:?}");
     if let Some(model) = &report.model {
         check_model(formula, model);
     }
-    assert!(report.oracle.epochs <= budget);
-    assert!(report.oracle_ms.is_finite() && report.oracle_ms >= 0.0);
     assert!(report.cdcl_ms.is_finite() && report.cdcl_ms >= 0.0);
-    assert!(report
-        .oracle
-        .continuous_values
-        .iter()
-        .all(|value| { value.is_finite() && (0.0..=1.0).contains(value) }));
-    if !report.used_cdcl {
-        assert!(report.oracle.model.is_some());
-        assert!(report.model.is_some());
+    assert!(report.cdcl.reignition_ms.is_finite() && report.cdcl.reignition_ms >= 0.0);
+    // Every oracle run stays within its flip budget.
+    let budget = parameters.oracle.flips_per_variable * variable_ids(formula).len();
+    assert!(report.cdcl.reignition_flips <= report.cdcl.reignitions * budget);
+    if parameters.oracle.flips_per_variable == 0 || parameters.reignition_interval == 0 {
+        assert_eq!(report.cdcl.reignitions, 0);
+        assert_eq!(report.cdcl.reignition_ms, 0.0);
+    }
+}
+
+#[test]
+fn empty_formula_is_sat_without_search() {
+    let formula = vec![];
+    for parameters in [config(0, 500), config(4, 500)] {
+        let report = solve_hybrid(&formula, parameters);
+        check_report(&formula, &report, parameters);
+        assert!(report.model.as_ref().unwrap().is_empty());
         assert_eq!(report.cdcl.decisions, 0);
         assert_eq!(report.cdcl.conflicts, 0);
     }
 }
 
 #[test]
-fn empty_formula_uses_verified_oracle_fast_path() {
-    let formula = vec![];
-    let report = solve_hybrid(&formula, config(0, 4.0));
-    check_report(&formula, &report, 0);
-    assert!(!report.used_cdcl);
-    assert!(report.model.as_ref().unwrap().is_empty());
-}
-
-#[test]
-fn unknown_oracle_is_never_treated_as_unsat_without_cdcl() {
+fn the_oracle_never_decides_unsat_and_the_search_still_proves_it() {
     let formula = vec![vec![1], vec![-1]];
-    let report = solve_hybrid(&formula, config(0, 4.0));
-    check_report(&formula, &report, 0);
-    assert!(report.used_cdcl);
-    assert!(report.oracle.model.is_none());
+    let parameters = config(64, 1);
+    let report = solve_hybrid(&formula, parameters);
+    check_report(&formula, &report, parameters);
     assert!(report.model.is_none());
+    assert!(report.cdcl.conflicts > 0);
+    // A root contradiction is settled before the oracle is ever consulted.
+    assert_eq!(report.cdcl.reignitions, 0);
 }
 
 #[test]
-fn zero_epoch_oracle_falls_back_and_finds_a_model() {
-    let parameters = config(0, 4.0);
-    let scout_formula: Vec<Vec<i32>> = (1..=6).map(|v| vec![v, -v]).collect();
-    let scout = solve_gradient(&scout_formula, parameters.oracle);
-    // Same variable IDs and seed, but every unit opposes the initial tensor.
-    let formula: Vec<Vec<i32>> = scout
-        .continuous_values
-        .iter()
-        .enumerate()
-        .map(|(index, &value)| {
-            let variable = (index + 1) as i32;
-            vec![if value >= 0.5 { -variable } else { variable }]
-        })
-        .collect();
+fn a_disabled_oracle_leaves_the_plain_search_untouched() {
+    let formula = vec![
+        vec![1, 2, 3],
+        vec![-1, 2],
+        vec![-2, 3],
+        vec![-3, 4, 5],
+        vec![-4, -5],
+        vec![5, 6],
+    ];
+    let (plain_model, plain) = solve_cdcl(&formula);
+    for parameters in [config(0, 500), config(8, 0)] {
+        let report = solve_hybrid(&formula, parameters);
+        check_report(&formula, &report, parameters);
+        assert_eq!(report.model, plain_model);
+        assert_eq!(report.cdcl.decisions, plain.decisions);
+        assert_eq!(report.cdcl.conflicts, plain.conflicts);
+        assert_eq!(report.cdcl.propagations, plain.propagations);
+    }
+}
+
+#[test]
+fn an_oracle_model_is_verified_and_ends_the_search() {
+    // Disjoint clauses: local search satisfies them long before its budget runs out.
+    let formula: Vec<Vec<i32>> = (1..=18).step_by(3).map(|v| vec![v, v + 1, v + 2]).collect();
+    let parameters = config(16, 500);
     let report = solve_hybrid(&formula, parameters);
-    check_report(&formula, &report, 0);
-    assert!(report.used_cdcl);
-    assert!(report.oracle.model.is_none());
+    check_report(&formula, &report, parameters);
     assert!(report.model.is_some());
-    assert_eq!(report.oracle.continuous_values, scout.continuous_values);
+    assert_eq!(report.cdcl.reignitions, 1);
+    assert_eq!(report.cdcl.decisions, 0);
+    assert_eq!(report.cdcl.conflicts, 0);
 }
 
 #[test]
@@ -131,9 +142,10 @@ fn empty_clause_tautologies_and_repeated_literals_remain_exact() {
         vec![vec![1, -1, 1], vec![2, -2, 2], vec![-3, -3, 4], vec![3, 4]],
     ];
     for formula in cases {
-        for epochs in [0, 7] {
-            let report = solve_hybrid(&formula, config(epochs, 4.0));
-            check_report(&formula, &report, epochs);
+        for flips in [0, 7] {
+            let parameters = config(flips, 1);
+            let report = solve_hybrid(&formula, parameters);
+            check_report(&formula, &report, parameters);
         }
     }
 }
@@ -151,17 +163,15 @@ fn sparse_identifiers_roundtrip_without_dense_allocation() {
         ],
     ];
     for formula in cases {
-        let report = solve_hybrid(&formula, config(0, 32.0));
-        check_report(&formula, &report, 0);
-        assert_eq!(
-            report.oracle.continuous_values.len(),
-            formula
-                .iter()
-                .flatten()
-                .map(|v| v.unsigned_abs())
-                .collect::<BTreeSet<_>>()
-                .len()
-        );
+        for flips in [0, 3] {
+            let parameters = config(flips, 1);
+            let report = solve_hybrid(&formula, parameters);
+            check_report(&formula, &report, parameters);
+            if let Some(model) = &report.model {
+                let assigned: Vec<u32> = model.iter().map(|literal| literal.unsigned_abs()).collect();
+                assert_eq!(assigned, variable_ids(&formula));
+            }
+        }
     }
 }
 
@@ -197,16 +207,15 @@ fn deterministic_generated_formulas_match_exhaustive_truth_tables() {
                         .collect()
                 })
                 .collect();
-            let epochs = [0, 3, 7][case % 3];
-            let boost = [0.0, 4.0, 1000.0][case % 3];
-            let report = solve_hybrid(&formula, config(epochs, boost));
-            check_report(&formula, &report, epochs);
+            let parameters = config([0, 1, 5][case % 3], [1, 3, 500][(case / 3) % 3]);
+            let report = solve_hybrid(&formula, parameters);
+            check_report(&formula, &report, parameters);
         }
     }
 }
 
 #[test]
-fn every_assignment_excluded_is_proved_unsat_after_oracle_budget() {
+fn every_assignment_excluded_is_proved_unsat_with_the_oracle_running() {
     for n in 1..=5 {
         let formula: Vec<Vec<i32>> = (0..1_usize << n)
             .map(|bits| {
@@ -222,9 +231,9 @@ fn every_assignment_excluded_is_proved_unsat_after_oracle_budget() {
                     .collect()
             })
             .collect();
-        let report = solve_hybrid(&formula, config(5, 4.0));
-        check_report(&formula, &report, 5);
-        assert!(report.used_cdcl);
+        let parameters = config(5, 1);
+        let report = solve_hybrid(&formula, parameters);
+        check_report(&formula, &report, parameters);
         assert!(report.model.is_none());
         assert!(report.cdcl.conflicts > 0);
     }
@@ -260,28 +269,24 @@ fn small_pigeonhole_is_exact_with_and_without_symmetry_recognition() {
                 // Raw extra tautology disables the strict recognized-family preprocessor.
                 formula.push(vec![1, -1, 1]);
             }
-            let report = solve_hybrid(&formula, config(5, 4.0));
-            check_report(&formula, &report, 5);
+            let parameters = config(5, 1);
+            let report = solve_hybrid(&formula, parameters);
+            check_report(&formula, &report, parameters);
             assert_eq!(report.model.is_some(), pigeons <= holes);
-            if pigeons > holes {
-                assert!(report.used_cdcl);
-            }
         }
     }
 }
 
 #[test]
 fn hybrid_search_model_and_search_counts_are_deterministic() {
-    let mut formula = pigeonhole(4, 3);
+    let mut formula = pigeonhole(5, 4);
     formula.push(vec![1, -1, 1]);
-    let parameters = config(17, 11.0);
+    let parameters = config(3, 2);
     let first = solve_hybrid(&formula, parameters);
     let second = solve_hybrid(&formula, parameters);
-    check_report(&formula, &first, 17);
-    check_report(&formula, &second, 17);
+    check_report(&formula, &first, parameters);
+    check_report(&formula, &second, parameters);
     assert_eq!(first.model, second.model);
-    assert_eq!(first.oracle, second.oracle);
-    assert_eq!(first.used_cdcl, second.used_cdcl);
     assert_eq!(first.cdcl.decisions, second.cdcl.decisions);
     assert_eq!(first.cdcl.conflicts, second.cdcl.conflicts);
     assert_eq!(first.cdcl.propagations, second.cdcl.propagations);
@@ -291,95 +296,31 @@ fn hybrid_search_model_and_search_counts_are_deterministic() {
         first.cdcl.nonchronological_backjumps,
         second.cdcl.nonchronological_backjumps
     );
+    assert_eq!(first.cdcl.restarts, second.cdcl.restarts);
+    assert_eq!(first.cdcl.reignitions, second.cdcl.reignitions);
+    assert_eq!(first.cdcl.reignition_flips, second.cdcl.reignition_flips);
 }
 
 #[test]
-fn oracle_statistics_describe_the_returned_tensor() {
-    let formula = vec![vec![1], vec![1], vec![-1], vec![2], vec![-2]];
-    let mut parameters = config(11, 4.0);
-    parameters.oracle.restarts = 3;
-    let report = solve_hybrid(&formula, parameters);
-    check_report(&formula, &report, 11);
-    assert!(report.used_cdcl);
-    assert_eq!(report.oracle.epochs, 11);
-    let compiled = CompiledFormula::new(&formula);
-    assert_eq!(compiled.variable_ids(), &report.oracle.variable_ids);
-    let mut gradient = vec![0.0; report.oracle.continuous_values.len()];
-    let loss = compiled.loss_and_gradient(&report.oracle.continuous_values, &mut gradient);
-    let norm = gradient.iter().map(|g| g * g).sum::<f64>().sqrt();
-    assert!((loss - report.oracle.loss).abs() < 1.0e-12);
-    assert!((norm - report.oracle.gradient_l2).abs() < 1.0e-12);
-    let rounded: Vec<bool> = report
-        .oracle
-        .continuous_values
-        .iter()
-        .map(|&v| v >= 0.5)
-        .collect();
-    assert_eq!(
-        compiled.violations(&rounded),
-        report.oracle.violated_clauses
-    );
-}
-
-#[test]
-fn loose_numerical_threshold_cannot_create_an_unsound_sat_answer() {
-    let formula = vec![vec![1], vec![-1]];
-    let mut parameters = config(2, 4.0);
-    parameters.oracle.loss_threshold = 10.0;
-    let report = solve_hybrid(&formula, parameters);
-    check_report(&formula, &report, 2);
-    assert!(report.used_cdcl);
-    assert!(report.model.is_none());
-}
-
-#[test]
-fn maximal_finite_activity_boost_preserves_exactness() {
+fn the_oracle_seed_changes_the_walk_but_never_the_answer() {
+    let mut asymmetric = pigeonhole(4, 3);
+    asymmetric.push(vec![1, -1, 1]);
     let cases = [
-        vec![vec![1, 2]],
-        vec![vec![-1, -2]],
-        vec![vec![1, -1]],
+        asymmetric,
+        pigeonhole(3, 3),
+        vec![vec![1, 2], vec![-1, 3], vec![-2, -3], vec![2, 3, 4], vec![-4, 1]],
         vec![vec![1, 2], vec![-1, 2], vec![1, -2], vec![-1, -2]],
     ];
     for formula in cases {
-        for value in [0.0, 0.5, 1.0] {
-            let guidance = [(1, value), (2, value)];
-            let (model, _) = hybrid::cdcl::solve_cdcl(&formula, Some(&guidance), f64::MAX);
-            assert_eq!(model.is_some(), brute_force(&formula));
-            if let Some(model) = model {
-                check_model(&formula, &model);
-            }
+        let expected = brute_force(&formula);
+        for seed in 0..16 {
+            let parameters = HybridConfig {
+                oracle: OracleConfig { flips_per_variable: 2, seed },
+                reignition_interval: 1,
+            };
+            let report = solve_hybrid(&formula, parameters);
+            check_report(&formula, &report, parameters);
+            assert_eq!(report.model.is_some(), expected);
         }
     }
-
-    let parameters = config(0, f64::MAX);
-    let scaffold: Vec<Vec<i32>> = (1..=6).map(|v| vec![v, -v]).collect();
-    let tensor = solve_gradient(&scaffold, parameters.oracle).continuous_values;
-    let units: Vec<Vec<i32>> = tensor.iter().enumerate().map(|(index, &value)| {
-        let id = (index + 1) as i32;
-        vec![if value >= 0.5 { -id } else { id }]
-    }).collect();
-    let report = solve_hybrid(&units, parameters);
-    check_report(&units, &report, 0);
-    assert!(report.used_cdcl);
-}
-
-#[test]
-fn confidence_and_polarity_priors_control_the_initial_branch() {
-    let formula = vec![vec![1, 2]];
-    for (value, signed_variable) in [(0.85, 1), (0.15, -1)] {
-        let guidance = [(1, value), (2, 0.5)];
-        let (model, _) = hybrid::cdcl::solve_cdcl(&formula, Some(&guidance), 1000.0);
-        let model = model.unwrap();
-        check_model(&formula, &model);
-        assert!(model.contains(&signed_variable));
-    }
-
-    // Choosing confident x2=false first makes x1 a unit: exactly one decision.
-    // Choosing the earlier variable x1=true first requires two decisions.
-    let guidance = [(1, 0.5), (2, 0.01)];
-    let (model, stats) = hybrid::cdcl::solve_cdcl(&formula, Some(&guidance), 1000.0);
-    let model = model.unwrap();
-    check_model(&formula, &model);
-    assert!(model.contains(&-2));
-    assert_eq!(stats.decisions, 1);
 }
