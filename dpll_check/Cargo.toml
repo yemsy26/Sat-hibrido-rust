@@ -4,6 +4,10 @@ version = "0.1.0"
 edition = "2021"
 default-run = "dpll_check"
 
+[dependencies]
+# Puente de I/O en RAM para las trazas: anillo SPSC y sink zstd.
+chronos-vfs = { path = "Chronos-VFS" }
+
 [profile.release]
 debug = false
 
