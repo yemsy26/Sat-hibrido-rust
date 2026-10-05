@@ -1,7 +1,7 @@
-// Fase 12: chasis CDCL con arena lineal, watchers de 8 bytes, VMTF/EVSIDS y restarts.
-// Los cubos son decisiones; cada worker conserva su aprendizaje entre cubos.
+// Fase 12b: chasis CDCL (arena, watchers de 8 bytes, VMTF/EVSIDS, restarts) y CloudPool en anillo.
+// Los cubos son decisiones; cada worker conserva su aprendizaje y su contexto de intercambio.
 // El oraculo solo guia; SAT verifica la formula original. Compartir no garantiza mejoras.
-// Medicion local 10/9: serial 65 ms (Fase 11: 408 ms); el enjambre de 16 workers no la mejora.
+// Medicion local 10/9: serial 67 ms; 16 workers 51-74 ms con pool y 72-90 ms sin el.
 #![forbid(unsafe_code)]
 #![deny(warnings)]
 
@@ -320,10 +320,10 @@ pub fn solve_gradient(formula: &[Clause], config: GradientConfig) -> GradientRep
 }
 
 pub mod cdcl {
-use std::collections::HashSet;
+use std::collections::{HashSet, VecDeque};
 use super::gradient::{GradientConfig, OracleWorkspace};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use std::time::Instant;
 pub type Clause = Vec<i32>;
 pub type Formula = Vec<Clause>;
@@ -348,6 +348,7 @@ pub struct SolveStats {
     pub exported_clauses: usize,
     pub imported_clauses: usize,
     pub dropped_exports: usize,
+    // Siempre 0 desde la Fase 12b: solo se importa en el nivel 0.
     pub import_backjumps: usize,
 }
 impl SolveStats {
@@ -388,7 +389,9 @@ impl Default for ReignitionConfig {
 pub struct SwarmConfig {
     pub workers: usize,
     pub cubes_per_worker: usize,
+    // Ventana de cláusulas retenidas en el anillo; 0 desactiva el intercambio.
     pub share_capacity: usize,
+    // Conflictos mínimos entre sincronizaciones; se importa solo al reiniciar.
     pub share_interval: usize,
     pub reignition: ReignitionConfig,
     pub activity_boost: f64,
@@ -418,68 +421,155 @@ pub struct SwarmStats {
     // Snapshot auditable: IDs originales; nunca contiene cláusulas vacías.
     pub shared_clauses: Vec<Vec<i32>>,
 }
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-struct SmallClause {
-    literals: [u32; 3],
-    len: usize,
+// Solo se exportan cláusulas glue; una importada entra con LBD 3 y debe ganarse la permanencia.
+const EXPORT_LBD: u32 = 2;
+const IMPORT_LBD: u32 = 3;
+const EXPORT_BATCH: usize = 64;
+const KNOWN_LIMIT: usize = 1 << 20;
+// Lote inmutable de cláusulas codificadas como [n, literales...].
+struct Batch {
+    owner: u32,
+    count: usize,
+    words: Arc<[u32]>,
 }
-impl SmallClause {
-    fn canonical(clause: &[u32]) -> Option<Self> {
-        if clause.is_empty() || clause.len() > 3 { return None; }
-        let mut literals = [0; 3];
-        literals[..clause.len()].copy_from_slice(clause);
-        literals[..clause.len()].sort_unstable();
-        let mut len = 0;
-        for index in 0..clause.len() {
-            let literal = literals[index];
-            if len != 0 && literals[len - 1] == literal { continue; }
-            if len != 0 && literals[len - 1] == (literal ^ 1) { return None; }
-            literals[len] = literal;
-            len += 1;
-        }
-        literals[len..].fill(0);
-        Some(Self { literals, len })
-    }
-    fn as_slice(&self) -> &[u32] { &self.literals[..self.len] }
+struct CloudLog {
+    batches: VecDeque<Batch>,
+    // Secuencia del próximo lote; el más antiguo retenido es `next - batches.len()`.
+    next: u64,
+    clauses: usize,
 }
-#[derive(Clone, Copy)]
-struct SharedClause { clause: SmallClause }
-struct CloudLog { clauses: Vec<SharedClause>, known: HashSet<SmallClause> }
+// Anillo de lotes sin tope de vida: `capacity` es la ventana de cláusulas retenidas.
 pub struct CloudPool { log: Mutex<CloudLog>, capacity: usize }
 impl CloudPool {
     pub fn new(capacity: usize) -> Self {
-        let capacity = capacity.min(8192);
-        Self { log: Mutex::new(CloudLog {
-            clauses: Vec::with_capacity(capacity), known: HashSet::with_capacity(capacity),
-        }), capacity }
+        Self { log: Mutex::new(CloudLog { batches: VecDeque::new(), next: 0, clauses: 0 }), capacity }
     }
-    fn publish(&self, clause: SmallClause) -> bool {
-        let Ok(mut log) = self.log.try_lock() else { return false; };
-        if log.clauses.len() == self.capacity || !log.known.insert(clause) { return false; }
-        log.clauses.push(SharedClause { clause });
+    // El candado solo cubre un push de puntero y la expulsión de los lotes más antiguos.
+    fn publish(&self, batch: Batch, wait: bool) -> bool {
+        let guard = if wait { self.log.lock().ok() } else { self.log.try_lock().ok() };
+        let Some(mut log) = guard else { return false; };
+        log.clauses += batch.count;
+        log.batches.push_back(batch);
+        log.next += 1;
+        while log.clauses > self.capacity {
+            let Some(oldest) = log.batches.pop_front() else { break; };
+            log.clauses -= oldest.count;
+        }
         true
     }
-    fn harvest(&self, cursor: &mut usize) -> Vec<SharedClause> {
-        let Ok(log) = self.log.try_lock() else { return Vec::new(); };
-        let clauses = log.clauses[*cursor..].to_vec();
-        *cursor = log.clauses.len();
-        clauses
+    // Lotes ajenos desde `cursor`; un lector rezagado continúa en el más antiguo retenido.
+    fn harvest(&self, owner: u32, cursor: &mut u64, batches: &mut Vec<Arc<[u32]>>) {
+        let Ok(log) = self.log.try_lock() else { return; };
+        let first = log.next - log.batches.len() as u64;
+        let skip = cursor.saturating_sub(first) as usize;
+        batches.extend(log.batches.iter().skip(skip)
+            .filter(|batch| batch.owner != owner).map(|batch| Arc::clone(&batch.words)));
+        *cursor = log.next;
     }
     fn snapshot(&self, variables: &[u32]) -> Vec<Vec<i32>> {
-        let Ok(log) = self.log.try_lock() else { return Vec::new(); };
-        log.clauses.iter().map(|entry| entry.clause.as_slice().iter().map(|&literal| {
-            let variable = variables[(literal >> 1) as usize] as i32;
-            if literal & 1 == 0 { variable } else { -variable }
-        }).collect()).collect()
+        let Ok(log) = self.log.lock() else { return Vec::new(); };
+        log.batches.iter().flat_map(|batch| clauses_of(&batch.words)).map(|clause| {
+            clause.iter().map(|&literal| {
+                let variable = variables[(literal >> 1) as usize] as i32;
+                if literal & 1 == 0 { variable } else { -variable }
+            }).collect()
+        }).collect()
+    }
+}
+fn clauses_of(words: &[u32]) -> impl Iterator<Item = &[u32]> {
+    let mut rest = words;
+    std::iter::from_fn(move || {
+        let (&size, tail) = rest.split_first()?;
+        let (clause, tail) = tail.split_at(size as usize);
+        rest = tail;
+        Some(clause)
+    })
+}
+// Huella independiente del orden de los literales: el filtro no necesita canonizar.
+fn fingerprint(clause: &[u32]) -> u64 {
+    clause.iter().fold(clause.len() as u64, |sum, &literal| {
+        let mut mixed = u64::from(literal).wrapping_add(0x9e37_79b9_7f4a_7c15);
+        mixed = (mixed ^ (mixed >> 30)).wrapping_mul(0xbf58_476d_1ce4_e5b9);
+        mixed = (mixed ^ (mixed >> 27)).wrapping_mul(0x94d0_49bb_1331_11eb);
+        sum.wrapping_add(mixed ^ (mixed >> 31))
+    })
+}
+// Contexto de intercambio de un worker: sobrevive entre cubos, así que nada se reimporta.
+struct Sharing<'a> {
+    pool: &'a CloudPool,
+    owner: u32,
+    interval: u64,
+    cursor: u64,
+    last_sync: u64,
+    known: HashSet<u64>,
+    outbox: Vec<u32>,
+    pending: usize,
+    inbox: Vec<u32>,
+}
+impl<'a> Sharing<'a> {
+    fn new(pool: &'a CloudPool, owner: u32, interval: u64) -> Self {
+        Self {
+            pool, owner, interval, cursor: 0, last_sync: 0, known: HashSet::new(),
+            outbox: Vec::new(), pending: 0, inbox: Vec::new(),
+        }
+    }
+    fn remember(&mut self, clause: &[u32]) -> bool {
+        // Olvidar el filtro solo permite algún duplicado; nunca afecta a la corrección.
+        if self.known.len() >= KNOWN_LIMIT {
+            self.known.clear();
+        }
+        self.known.insert(fingerprint(clause))
+    }
+    fn export(&mut self, clause: &[u32], stats: &mut SolveStats) {
+        if !self.remember(clause) {
+            return;
+        }
+        self.outbox.push(clause.len() as u32);
+        self.outbox.extend_from_slice(clause);
+        self.pending += 1;
+        if self.pending >= EXPORT_BATCH.min(self.pool.capacity) {
+            self.flush(stats, false);
+        }
+    }
+    fn flush(&mut self, stats: &mut SolveStats, wait: bool) {
+        if self.pending == 0 {
+            return;
+        }
+        // Un lote nunca excede el anillo: se conservan las cláusulas más recientes.
+        let count = self.pending.min(self.pool.capacity);
+        let mut start = 0;
+        for _ in count..self.pending {
+            start += 1 + self.outbox[start] as usize;
+        }
+        let batch = Batch { owner: self.owner, count, words: Arc::from(&self.outbox[start..]) };
+        if self.pool.publish(batch, wait) {
+            stats.exported_clauses += count;
+            stats.dropped_exports += self.pending - count;
+            self.outbox.clear();
+            self.pending = 0;
+        }
+    }
+    // Publica lo pendiente y deja en `inbox` las cláusulas ajenas aún no vistas.
+    fn exchange(&mut self, conflicts: u64, stats: &mut SolveStats) {
+        self.flush(stats, false);
+        let mut batches = Vec::new();
+        self.pool.harvest(self.owner, &mut self.cursor, &mut batches);
+        for words in batches {
+            for clause in clauses_of(&words) {
+                if self.remember(clause) {
+                    self.inbox.push(clause.len() as u32);
+                    self.inbox.extend_from_slice(clause);
+                }
+            }
+        }
+        self.last_sync = conflicts;
     }
 }
 enum SearchOutcome { Sat(Vec<i32>), Unsat, Cancelled }
-#[derive(Clone, Copy)]
-struct Sharing<'a> { pool: &'a CloudPool, interval: usize }
-struct SearchControl<'a> {
+struct SearchControl<'a, 'p> {
     cube: &'a [u32],
     cancel: Option<&'a AtomicBool>,
-    sharing: Option<Sharing<'a>>,
+    sharing: Option<&'a mut Sharing<'p>>,
 }
 // Certificado estructural completo: no se infieren simetrías por frecuencias.
 fn inject_pigeonhole_symmetry(formula: &mut Formula, variables: &[u32]) -> (usize, usize, usize) {
@@ -1052,70 +1142,38 @@ impl State {
         }
         None
     }
-    fn import_level(&self, clause: SmallClause) -> Option<usize> {
-        if let [literal] = *clause.as_slice() {
-            // Una unidad solo queda resuelta si ya es verdadera en la raíz.
-            let settled = self.value(literal) == 1 && self.levels[variable_of(literal)] == 0;
-            return (!settled).then_some(0);
-        }
-        let mut nonfalse = None;
-        let mut false_level = 0;
-        for &literal in clause.as_slice() {
-            if self.value(literal) == -1 {
-                false_level = false_level.max(self.levels[variable_of(literal)] as usize);
-            } else if nonfalse.replace(literal).is_some() {
-                return None;
+    // En la raíz un literal verdadero satisface la cláusula y uno falso desaparece:
+    // lo que queda está libre, así que adjuntarla nunca propaga ni fuerza un backjump.
+    fn import(&mut self, clause: &[u32]) {
+        debug_assert_eq!(self.level(), 0);
+        let mut literals = std::mem::take(&mut self.learned);
+        literals.clear();
+        let satisfied = clause.iter().any(|&literal| match self.value(literal) {
+            1 => true,
+            0 => {
+                literals.push(literal);
+                false
             }
-        }
-        match nonfalse {
-            None => Some(false_level),
-            Some(literal) if self.value(literal) == 0
-                || self.levels[variable_of(literal)] as usize > false_level => Some(false_level),
-            Some(_) => None,
-        }
-    }
-    fn attach_import(&mut self, clause: SmallClause) -> Option<Conflict> {
-        let mut literals = clause.literals;
-        // No falsos primero; falsos de mayor nivel antes: sus watches se liberan tras un backjump.
-        literals[..clause.len].sort_unstable_by_key(|&literal| {
-            if self.value(literal) == -1 {
-                (true, std::cmp::Reverse(self.levels[variable_of(literal)]))
-            } else {
-                (false, std::cmp::Reverse(0))
-            }
+            _ => false,
         });
-        self.stats.imported_clauses += 1;
-        self.stats.learned_clauses += 1;
-        let (first, second) = (literals[0], literals[1]);
-        let (reason, conflict) = match clause.len {
-            1 => {
-                // `import_level` ya forzó el nivel 0 para toda unidad no resuelta.
-                match self.value(first) {
-                    0 => self.assign_root(first),
-                    1 => {}
-                    _ => self.root_unsat = true,
+        if !satisfied {
+            self.stats.imported_clauses += 1;
+            match *literals {
+                [] => self.root_unsat = true,
+                [literal] => self.assign_root(literal),
+                [first, second] => self.watch_binary(first, second),
+                _ => {
+                    self.add_long(&literals, true, IMPORT_LBD);
                 }
-                return None;
             }
-            2 => {
-                self.watch_binary(first, second);
-                (BINARY | second, Conflict::Binary(first, second))
-            }
-            _ => {
-                let reference = self.add_long(&literals, true, 3);
-                (reference, Conflict::Long(reference))
-            }
-        };
-        // Con el segundo literal no falso quedan dos vigilados válidos.
-        if self.value(second) != -1 {
-            return None;
         }
-        match self.value(first) {
-            0 => self.assign(first, reason),
-            1 => {}
-            _ => return Some(conflict),
+        self.learned = literals;
+    }
+    fn absorb(&mut self, inbox: &mut Vec<u32>) {
+        for clause in clauses_of(inbox) {
+            self.import(clause);
         }
-        None
+        inbox.clear();
     }
     #[inline]
     fn mark(&mut self, literal: u32, pending: &mut usize) {
@@ -1409,30 +1467,6 @@ impl State {
     fn assignment(&self) -> Vec<i8> {
         self.values.iter().step_by(2).copied().collect()
     }
-    // Unidades raíz, binarias inline y ternarias de la arena.
-    fn small_clauses(&self) -> HashSet<SmallClause> {
-        let mut known = HashSet::new();
-        let root = self.trail_limits.first().copied().unwrap_or(self.trail.len());
-        known.extend(self.trail[..root].iter()
-            .filter_map(|&literal| SmallClause::canonical(&[literal])));
-        for (literal, watchers) in self.watches.iter().enumerate() {
-            for watcher in watchers {
-                if watcher.reference & BINARY != 0 && (literal as u32) < watcher.blocker {
-                    known.extend(SmallClause::canonical(&[literal as u32, watcher.blocker]));
-                }
-            }
-        }
-        let mut reference = 0;
-        while reference < self.arena.len() {
-            let start = reference + HEADER;
-            let size = self.arena[reference] as usize;
-            if size == 3 {
-                known.extend(SmallClause::canonical(&self.arena[start..start + size]));
-            }
-            reference = start + size;
-        }
-        known
-    }
     // Candidatas: aprendidas con LBD > 2 que no son razón ni se usaron desde la última reducción.
     fn reduce_database(&mut self) {
         debug_assert_eq!(self.head, self.trail.len());
@@ -1621,45 +1655,64 @@ fn run_state(
     guidance: Option<&[(u32, f64)]>,
     activity_boost: f64,
     config: Option<ReignitionConfig>,
-    control: SearchControl<'_>,
+    mut control: SearchControl<'_, '_>,
 ) -> (SearchOutcome, SolveStats) {
+    let outcome = search(state, variables, formula, guidance, activity_boost, config, &mut control);
+    if let Some(link) = control.sharing {
+        // Lo aprendido en este cubo se publica entero antes de soltar el estado.
+        link.flush(&mut state.stats, true);
+    }
+    (outcome, state.stats)
+}
+fn search(
+    state: &mut State,
+    variables: &[u32],
+    formula: &[Vec<i32>],
+    guidance: Option<&[(u32, f64)]>,
+    activity_boost: f64,
+    config: Option<ReignitionConfig>,
+    control: &mut SearchControl<'_, '_>,
+) -> SearchOutcome {
     // La cancelación se consulta una vez por conflicto o decisión, nunca dentro del BCP.
-    let cancelled = || control.cancel.is_some_and(|flag| flag.load(Ordering::Acquire));
+    let cancel = control.cancel;
+    let cancelled = || cancel.is_some_and(|flag| flag.load(Ordering::Acquire));
     if cancelled() {
-        return (SearchOutcome::Cancelled, state.stats);
+        return SearchOutcome::Cancelled;
     }
     // El certificado raiz evita reprocesar una cola contradictoria y cubos posteriores.
-    if state.root_unsat { return (SearchOutcome::Unsat, state.stats); }
+    if state.root_unsat { return SearchOutcome::Unsat; }
     let feedback = config.filter(|configuration| configuration.interval != 0);
     let mut next_feedback = feedback.map_or(usize::MAX, |configuration| configuration.interval);
     let mut workspace: Option<OracleWorkspace> = None;
-    let mut cursor = 0;
-    let mut next_share = 0;
-    let mut pending_conflict = None;
-    let mut known = if control.sharing.is_some() { state.small_clauses() } else { HashSet::new() };
+    if let Some(link) = control.sharing.as_deref_mut() {
+        // Un cubo empieza en el nivel 0: mismo punto de sincronización que un restart.
+        if state.level() == 0 {
+            link.exchange(state.conflicts, &mut state.stats);
+            state.absorb(&mut link.inbox);
+        }
+    }
     loop {
         if cancelled() {
-            return (SearchOutcome::Cancelled, state.stats);
+            return SearchOutcome::Cancelled;
         }
-        if let Some(conflict) = pending_conflict.take().or_else(|| state.propagate()) {
+        if state.root_unsat {
+            // Una importación contradice la raíz: consecuencia global, UNSAT.
+            state.stats.conflicts += 1;
+            return SearchOutcome::Unsat;
+        }
+        if let Some(conflict) = state.propagate() {
             state.stats.conflicts += 1;
             let level = state.level();
             if level == 0 {
                 // No se publica la cláusula vacía ni se confunde cancelación con UNSAT.
                 state.root_unsat = true;
-                return (SearchOutcome::Unsat, state.stats);
+                return SearchOutcome::Unsat;
             }
             let (backjump_level, lbd) = state.analyze(conflict);
-            if let Some(sharing) = control.sharing {
-                if let Some(clause) = SmallClause::canonical(&state.learned) {
-                    // Clausulas globales de hasta tres literales; CDCL local conserva todas.
-                    if known.insert(clause) {
-                        if sharing.pool.publish(clause) {
-                            state.stats.exported_clauses += 1;
-                        } else {
-                            state.stats.dropped_exports += 1;
-                        }
-                    }
+            if lbd <= EXPORT_LBD {
+                if let Some(link) = control.sharing.as_deref_mut() {
+                    // Los cubos son decisiones: toda cláusula aprendida es consecuencia global.
+                    link.export(&state.learned, &mut state.stats);
                 }
             }
             state.stats.backjumps += 1;
@@ -1668,42 +1721,11 @@ fn run_state(
             state.learn(lbd);
             continue;
         }
-        let reduced = state.conflicts >= state.next_cleanup;
-        if reduced {
+        if state.conflicts >= state.next_cleanup {
             state.reduce_database();
         }
-        let feedback_due = feedback.is_some() && state.stats.conflicts >= next_feedback;
-        if let Some(sharing) = control.sharing {
-            if state.stats.conflicts >= next_share || feedback_due || reduced {
-                let imports: Vec<SmallClause> = sharing.pool.harvest(&mut cursor).into_iter()
-                    .filter_map(|entry| known.insert(entry.clause).then_some(entry.clause)).collect();
-                next_share = state.stats.conflicts.saturating_add(sharing.interval.max(1));
-                if !imports.is_empty() {
-                    loop {
-                        let current = state.level();
-                        let required = imports.iter().filter_map(|&clause| state.import_level(clause))
-                            .min().unwrap_or(current);
-                        if required >= current { break; }
-                        state.backjump(required);
-                        state.stats.import_backjumps += 1;
-                    }
-                    for clause in imports {
-                        if let Some(conflict) = state.attach_import(clause) {
-                            pending_conflict.get_or_insert(conflict);
-                        }
-                    }
-                    if state.root_unsat {
-                        // Una unidad importada contradice la raíz: consecuencia global, UNSAT.
-                        state.stats.conflicts += 1;
-                        return (SearchOutcome::Unsat, state.stats);
-                    }
-                    // BCP/conflicto antes de Adam, replay del cubo o nuevas decisiones.
-                    continue;
-                }
-            }
-        }
         if let Some(configuration) = feedback {
-            if feedback_due {
+            if state.stats.conflicts >= next_feedback {
                 let started = Instant::now();
                 let oracle = workspace.get_or_insert_with(|| {
                     let mut initial: Vec<f64> = state.phases.iter()
@@ -1718,7 +1740,7 @@ fn run_state(
                     OracleWorkspace::new(formula, &initial)
                 });
                 let assignment = state.assignment();
-                let (updates, interrupted) = if let Some(cancel) = control.cancel {
+                let (updates, interrupted) = if let Some(cancel) = cancel {
                     oracle.reignite_with_cancel(&assignment, configuration.oracle, cancel)
                 } else {
                     (oracle.reignite(&assignment, configuration.oracle), false)
@@ -1726,7 +1748,7 @@ fn run_state(
                 state.stats.reignitions += 1;
                 state.stats.reignition_epochs += updates;
                 state.stats.reignition_ms += started.elapsed().as_secs_f64() * 1000.0;
-                if interrupted { return (SearchOutcome::Cancelled, state.stats); }
+                if interrupted { return SearchOutcome::Cancelled; }
                 state.refresh_guidance(oracle.values(), activity_boost);
                 next_feedback = state.stats.conflicts.saturating_add(configuration.interval);
             }
@@ -1734,7 +1756,7 @@ fn run_state(
         if state.level() < control.cube.len() {
             let literal = control.cube[state.level()];
             let value = state.value(literal);
-            if value == -1 { return (SearchOutcome::Unsat, state.stats); }
+            if value == -1 { return SearchOutcome::Unsat; }
             // Un nivel por supuesto; niveles vacíos solo se crean en un fixpoint.
             state.trail_limits.push(state.trail.len());
             if value == 0 {
@@ -1746,12 +1768,27 @@ fn run_state(
             continue;
         }
         if state.restart_due() {
-            // El restart conserva los supuestos del cubo; en serie limpia hasta el nivel 0.
-            state.restart(control.cube.len());
+            // El restart conserva los supuestos del cubo salvo que haya algo que importar:
+            // importar exige el nivel 0 y allí nunca fuerza un backjump.
+            let mut base = control.cube.len();
+            if let Some(link) = control.sharing.as_deref_mut() {
+                if state.conflicts - link.last_sync >= link.interval {
+                    link.exchange(state.conflicts, &mut state.stats);
+                    if !link.inbox.is_empty() {
+                        base = 0;
+                    }
+                }
+            }
+            state.restart(base);
+            if let Some(link) = control.sharing.as_deref_mut() {
+                if !link.inbox.is_empty() {
+                    state.absorb(&mut link.inbox);
+                }
+            }
             continue;
         }
         let Some(literal) = state.decide() else {
-            return (SearchOutcome::Sat(extract_model(state, variables)), state.stats);
+            return SearchOutcome::Sat(extract_model(state, variables));
         };
         state.trail_limits.push(state.trail.len());
         state.stats.decisions += 1;
@@ -1791,9 +1828,13 @@ fn swarm_worker(
     cancel: &AtomicBool,
     pool: &CloudPool,
     config: SwarmConfig,
+    owner: u32,
 ) -> WorkerReport {
     let mut report = WorkerReport::default();
     let mut state = base.clone();
+    // El contexto de intercambio vive lo que el worker, no lo que un cubo.
+    let mut link = (config.share_enabled && config.share_capacity != 0)
+        .then(|| Sharing::new(pool, owner, config.share_interval.max(1) as u64));
     loop {
         if cancel.load(Ordering::Acquire) { break; }
         let index = next.fetch_add(1, Ordering::Relaxed);
@@ -1806,9 +1847,7 @@ fn swarm_worker(
         }
         // Clausulas, razones/unidades raiz, fases y actividades sobreviven al cubo.
         state.stats = SolveStats::default();
-        let sharing = (config.share_enabled && config.share_capacity != 0)
-            .then_some(Sharing { pool, interval: config.share_interval.max(1) });
-        let control = SearchControl { cube, cancel: Some(cancel), sharing };
+        let control = SearchControl { cube, cancel: Some(cancel), sharing: link.as_mut() };
         let (outcome, stats) = run_state(&mut state, variables, formula, guidance,
             config.activity_boost, Some(config.reignition), control);
         report.total.add_search(stats);
@@ -1860,7 +1899,7 @@ pub fn solve_swarm(
             let (base, variables, cubes, next, cancel, pool) =
                 (&base, variables.as_slice(), cubes.as_slice(), &next, &cancel, &pool);
             let worker = move || swarm_worker(base, variables, formula, guidance, cubes,
-                next, cancel, pool, config);
+                next, cancel, pool, config, owner as u32);
             match std::thread::Builder::new().name(format!("swarm-{owner}"))
                 .spawn_scoped(scope, worker) {
                 Ok(handle) => handles.push(handle),
@@ -1869,7 +1908,7 @@ pub fn solve_swarm(
         }
         if handles.is_empty() {
             return (0, vec![swarm_worker(&base, &variables, formula, guidance, &cubes,
-                &next, &cancel, &pool, config)]);
+                &next, &cancel, &pool, config, 0)]);
         }
         let spawned = handles.len();
         let reports = handles.into_iter().map(|handle| handle.join().expect("SAT worker panicked"))
@@ -1902,15 +1941,13 @@ mod deterministic_import_tests {
         let formula = vec![vec![1, 2], vec![1, -2]];
         let (mut state, variables) = prepare_formula(formula.clone(), None, 4.0).unwrap();
         let positive_x1 = 0;
-        let negative_x2 = 3;
-        state.trail_limits.push(state.trail.len());
-        state.assign(negative_x2, NO_REASON);
-        assert!(state.propagate().is_none());
-        assert_eq!(state.value(positive_x1), 1);
-        assert_eq!(state.levels[0], 1);
 
-        let pool = CloudPool::new(1);
-        assert!(pool.publish(SmallClause::canonical(&[positive_x1]).unwrap()));
+        let pool = CloudPool::new(8);
+        let mut peer = Sharing::new(&pool, 1, 1);
+        let mut peer_stats = SolveStats::default();
+        peer.export(&[positive_x1], &mut peer_stats);
+        peer.flush(&mut peer_stats, true);
+        assert_eq!(peer_stats.exported_clauses, 1);
         let snapshot = pool.snapshot(&variables);
         assert_eq!(snapshot, vec![vec![1]]);
         for bits in 0..4 {
@@ -1922,10 +1959,8 @@ mod deterministic_import_tests {
             }
         }
 
-        let control = SearchControl {
-            cube: &[], cancel: None,
-            sharing: Some(Sharing { pool: &pool, interval: 1 }),
-        };
+        let mut link = Sharing::new(&pool, 0, 1);
+        let control = SearchControl { cube: &[], cancel: None, sharing: Some(&mut link) };
         let (outcome, stats) = run_state(
             &mut state, &variables, &formula, None, 4.0, None, control);
         let model = match outcome {
@@ -1934,11 +1969,43 @@ mod deterministic_import_tests {
         };
         assert!(model.contains(&1));
         assert_eq!(stats.imported_clauses, 1);
-        assert_eq!(stats.import_backjumps, 1);
+        assert_eq!(stats.import_backjumps, 0);
         assert_eq!(state.value(positive_x1), 1);
         assert_eq!(state.levels[0], 0);
         // La unidad importada vive en el trail raíz: no necesita cláusula antecedente.
         assert_eq!(state.reasons[0], NO_REASON);
+
+        // Siguiente cubo del mismo worker: cursor y filtro sobreviven, nada se reimporta.
+        state.backjump(0);
+        state.stats = SolveStats::default();
+        let control = SearchControl { cube: &[], cancel: None, sharing: Some(&mut link) };
+        let (_, stats) = run_state(&mut state, &variables, &formula, None, 4.0, None, control);
+        assert_eq!(stats.imported_clauses, 0);
+        // Un lote nunca vuelve a su autor.
+        peer.exchange(0, &mut peer_stats);
+        assert!(peer.inbox.is_empty());
+    }
+
+    #[test]
+    fn ring_keeps_the_newest_clauses_and_lagging_readers_skip_ahead() {
+        let pool = CloudPool::new(2);
+        let mut writer = Sharing::new(&pool, 0, 1);
+        let mut stats = SolveStats::default();
+        // Dos cláusulas llenan el anillo y salen como un lote; la tercera lo expulsa entero.
+        for literal in [0, 2, 4] {
+            writer.export(&[literal, literal + 11], &mut stats);
+        }
+        writer.flush(&mut stats, true);
+        assert_eq!(stats.exported_clauses, 3);
+        let variables: Vec<u32> = (1..=10).collect();
+        assert_eq!(pool.snapshot(&variables), vec![vec![3, -8]]);
+
+        let mut reader = Sharing::new(&pool, 1, 1);
+        reader.exchange(0, &mut stats);
+        let seen: Vec<Vec<u32>> = clauses_of(&reader.inbox).map(<[u32]>::to_vec).collect();
+        assert_eq!(seen, vec![vec![4, 15]]);
+        // El filtro reconoce la misma cláusula en cualquier orden de literales.
+        assert!(!reader.remember(&[15, 4]));
     }
 }
 
