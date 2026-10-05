@@ -2,7 +2,7 @@
 name = "dpll_check"
 version = "0.1.0"
 edition = "2021"
-default-run = "phase6"
+default-run = "dpll_check"
 
 [profile.release]
 debug = false

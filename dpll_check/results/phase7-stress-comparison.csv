@@ -1,0 +1,7 @@
+"case","mode","elapsed_ms","decisions","cubes_started","workers","cubes_generated","cubes_unsat","cubes_cancelled"
+"cdcl_pigeonhole_8_7","serial","19.943700","5983","0","0","0","0","0"
+"cdcl_pigeonhole_8_7","parallel","10.139500","12880","64","16","64","64","0"
+"cdcl_pigeonhole_10_9","serial","383.650900","111444","0","0","0","0","0"
+"cdcl_pigeonhole_10_9","parallel","281.626600","331756","64","16","64","64","0"
+"cdcl_pigeonhole_11_10","serial","2467.279900","567355","0","0","0","0","0"
+"cdcl_pigeonhole_11_10","parallel","5032.319700","1898080","64","16","64","64","0"

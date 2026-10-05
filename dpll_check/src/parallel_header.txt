@@ -1,0 +1,5 @@
+// Checkpoint Fase 6 guardado antes de esta mutación: fe399e2.
+// Cube-and-Conquer: canonización PHP y BCP raíz antes de clonar estados CDCL privados.
+// Lookahead acotado selecciona variables; todos sus cubos se cubren, con un máximo de 1024.
+// El primer modelo se publica bajo Mutex; AtomicBool cancela y todos los trabajadores se unen.
+// SAT/UNSAT sigue siendo exacto; el modelo ganador y el trabajo total dependen del planificador.
