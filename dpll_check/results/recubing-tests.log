@@ -1,0 +1,402 @@
+warn: could not canonicalize path C:\Users\yemsy
+   Compiling dpll_check v0.1.0 (C:\Users\yemsy\AppData\Local\Temp\sat-recube-review-bd32cd5b2f9d4211ac0e8bab04bfab74)
+    Finished `release` profile [optimized] target(s) in 20.86s
+     Running unittests src\bin\certify.rs (target\release\deps\certify-2eff07a0b4c2646f.exe)
+
+running 5 tests
+test hybrid::cdcl::deterministic_import_tests::beacon_publishes_whole_batches_and_the_remainder_only_on_flush ... ok
+test hybrid::cdcl::deterministic_import_tests::ring_keeps_the_newest_clauses_and_lagging_readers_skip_ahead ... ok
+test hybrid::cdcl::deterministic_import_tests::published_consequence_is_imported_and_promoted_to_root ... ok
+test hybrid::cdcl::deterministic_import_tests::walker_counters_survive_fixing_and_walking ... ok
+test hybrid::cdcl::deterministic_import_tests::oracle_model_ends_the_search_before_any_decision ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src\bin\chronos_certify.rs (target\release\deps\chronos_certify-66f0e57206c89c0d.exe)
+
+running 9 tests
+test hybrid::cdcl::deterministic_import_tests::oracle_model_ends_the_search_before_any_decision ... ok
+test hybrid::cdcl::deterministic_import_tests::published_consequence_is_imported_and_promoted_to_root ... ok
+test hybrid::cdcl::deterministic_import_tests::ring_keeps_the_newest_clauses_and_lagging_readers_skip_ahead ... ok
+test hybrid::cdcl::deterministic_import_tests::walker_counters_survive_fixing_and_walking ... ok
+test tests::options_default_to_the_certifiable_route ... ok
+test hybrid::cdcl::deterministic_import_tests::beacon_publishes_whole_batches_and_the_remainder_only_on_flush ... ok
+test tests::the_ring_delivers_the_trace_byte_for_byte ... ok
+test tests::the_zstd_sink_accounts_for_every_byte_of_the_trace ... ok
+test tests::the_consumer_routes_see_every_byte_and_every_line ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running unittests src\main.rs (target\release\deps\dpll_check-ff45c6362fd23af3.exe)
+
+running 5 tests
+test cdcl::deterministic_import_tests::oracle_model_ends_the_search_before_any_decision ... ok
+test cdcl::deterministic_import_tests::beacon_publishes_whole_batches_and_the_remainder_only_on_flush ... ok
+test cdcl::deterministic_import_tests::walker_counters_survive_fixing_and_walking ... ok
+test cdcl::deterministic_import_tests::ring_keeps_the_newest_clauses_and_lagging_readers_skip_ahead ... ok
+test cdcl::deterministic_import_tests::published_consequence_is_imported_and_promoted_to_root ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src\bin\gen_erdos.rs (target\release\deps\gen_erdos-a476dda33ff40f61.exe)
+
+running 3 tests
+test tests::trivial_progressions_are_skipped ... ok
+test tests::discrepancy_one_is_unsatisfiable_at_twelve ... ok
+test tests::the_encoding_agrees_with_brute_force_discrepancy ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
+
+     Running unittests src\bin\gen_ramsey.rs (target\release\deps\gen_ramsey-9a3ceebdd028e809.exe)
+
+running 3 tests
+test tests::edges_are_numbered_consecutively_from_one ... ok
+test tests::the_formula_has_two_clauses_of_ten_edges_per_five_vertices ... ok
+test tests::small_ramsey_numbers_are_reproduced_exhaustively ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src\bin\hunt.rs (target\release\deps\hunt-d1b47c59872a17f8.exe)
+
+running 30 tests
+test gpu_dispatcher::tests::throughput_on_a_ramsey_formula ... ignored
+test gpu_dispatcher::tests::lists_are_flattened_with_the_sign_bit_of_the_engine ... ok
+test gpu_dispatcher::tests::the_plan_counts_what_the_formula_needs_in_vram ... ok
+test hybrid::cdcl::deterministic_import_tests::beacon_publishes_whole_batches_and_the_remainder_only_on_flush ... ok
+test hybrid::cdcl::deterministic_import_tests::oracle_model_ends_the_search_before_any_decision ... ok
+test hybrid::cdcl::deterministic_import_tests::ring_keeps_the_newest_clauses_and_lagging_readers_skip_ahead ... ok
+test gpu_dispatcher::tests::a_stored_formula_is_recognised_without_flattening_it_again ... ok
+test ramsey_symmetry::tests::edges_are_numbered_like_the_generator_does ... ok
+test hybrid::cdcl::deterministic_import_tests::published_consequence_is_imported_and_promoted_to_root ... ok
+test gpu_dispatcher::tests::the_reference_propagates_to_a_fixpoint_and_names_what_it_proves ... ok
+test hybrid::cdcl::deterministic_import_tests::walker_counters_survive_fixing_and_walking ... ok
+test ramsey_symmetry::tests::ramsey_formulas_are_vertex_symmetric_and_others_are_not ... ok
+test symmetry_breaker::tests::shared_positions_are_skipped_and_calls_do_not_share_auxiliaries ... ok
+test symmetry_breaker::tests::a_variable_beyond_the_formula_is_rejected - should panic ... ok
+test symmetry_breaker::tests::groups_of_different_length_are_rejected - should panic ... ok
+test symmetry_breaker::tests::the_order_propagates_by_unit_resolution_along_a_tied_prefix ... ok
+test tests::dimacs_is_read_clause_by_clause ... ok
+test tests::a_trace_past_its_cap_stops_being_written ... ok
+test symmetry_breaker::tests::the_clauses_hold_exactly_when_the_first_group_is_not_greater ... ok
+test tests::every_row_has_the_columns_of_the_header ... ok
+test tests::ramsey_symmetry_breaking_is_off_unless_asked_for ... ok
+test tests::the_gpu_is_only_opened_when_asked_for ... ok
+test tests::the_status_line_gives_the_rate_since_the_previous_one ... ok
+test tests::the_swarm_cannot_be_asked_for_a_trace ... ok
+test ramsey_symmetry::tests::every_graph_keeps_an_isomorphic_copy ... ok
+test gpu_dispatcher::tests::a_plan_larger_than_the_card_is_refused_before_reserving ... ok
+test gpu_dispatcher::tests::the_formula_and_a_batch_reach_vram_and_each_cube_gets_its_verdict ... ok
+test gpu_dispatcher::tests::exhaustive_cubes_reproduce_the_ramsey_number_of_triangles ... ok
+test gpu_dispatcher::tests::long_chains_span_several_launches_and_wide_batches_several_chunks ... ok
+test gpu_dispatcher::tests::the_kernel_agrees_with_the_reference_on_random_formulas ... ok
+
+test result: ok. 29 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.93s
+
+     Running unittests src\bin\parity_stress.rs (target\release\deps\parity_stress-af5e24e36c6289a5.exe)
+
+running 5 tests
+test hybrid::cdcl::deterministic_import_tests::oracle_model_ends_the_search_before_any_decision ... ok
+test hybrid::cdcl::deterministic_import_tests::published_consequence_is_imported_and_promoted_to_root ... ok
+test hybrid::cdcl::deterministic_import_tests::beacon_publishes_whole_batches_and_the_remainder_only_on_flush ... ok
+test hybrid::cdcl::deterministic_import_tests::walker_counters_survive_fixing_and_walking ... ok
+test hybrid::cdcl::deterministic_import_tests::ring_keeps_the_newest_clauses_and_lagging_readers_skip_ahead ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src\bin\phase10.rs (target\release\deps\phase10-fb2e92c1fb0c64b8.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src\bin\phase3.rs (target\release\deps\phase3-8391c1b04327651a.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src\bin\phase4.rs (target\release\deps\phase4-4922c8a13dae473f.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src\bin\phase5.rs (target\release\deps\phase5-74aac0e2ddb5042d.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src\bin\phase6.rs (target\release\deps\phase6-77d7f60e84bd5392.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src\bin\phase7.rs (target\release\deps\phase7-d7a9d4bc232be703.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src\bin\phase8.rs (target\release\deps\phase8-b8335fc6e13fad31.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src\bin\phase9.rs (target\release\deps\phase9-db6d6cde41cebede.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\gradient.rs (target\release\deps\gradient-024c572f22cce4ea.exe)
+
+running 13 tests
+test empty_clause_has_constant_loss_and_returns_unknown ... ok
+test contradictory_units_never_report_sat ... ok
+test duplicate_literals_and_tautologies_have_consistent_gradients ... ok
+test empty_formula_and_simple_units_produce_verified_models ... ok
+test zero_factors_do_not_produce_nan_or_drop_nonzero_derivatives ... ok
+test identical_seed_and_configuration_reproduce_reports ... ok
+test an_epoch_limit_is_not_an_unsatisfiability_certificate ... ok
+test gradients_match_finite_differences_at_interior_and_boundary_points ... ok
+test unsatisfiable_pigeonhole_returns_unknown ... ok
+test mixed_sign_loss_and_gradient_match_the_clause_polynomial ... ok
+test sparse_maximum_variable_ids_are_packed_without_large_allocations ... ok
+test zero_loss_at_boolean_corners_matches_original_clause_semantics ... ok
+test every_sat_output_satisfies_the_original_formula_even_with_a_loose_loss_threshold ... ok
+
+test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\hybrid.rs (target\release\deps\hybrid-043bbed2b39ba8e9.exe)
+
+running 16 tests
+test a_disabled_oracle_leaves_the_plain_search_untouched ... ok
+test empty_formula_is_sat_without_search ... ok
+test the_oracle_never_decides_unsat_and_the_search_still_proves_it ... ok
+test hybrid::cdcl::deterministic_import_tests::beacon_publishes_whole_batches_and_the_remainder_only_on_flush ... ok
+test hybrid::cdcl::deterministic_import_tests::oracle_model_ends_the_search_before_any_decision ... ok
+test hybrid::cdcl::deterministic_import_tests::published_consequence_is_imported_and_promoted_to_root ... ok
+test hybrid::cdcl::deterministic_import_tests::ring_keeps_the_newest_clauses_and_lagging_readers_skip_ahead ... ok
+test hybrid::cdcl::deterministic_import_tests::walker_counters_survive_fixing_and_walking ... ok
+test empty_clause_tautologies_and_repeated_literals_remain_exact ... ok
+test sparse_identifiers_roundtrip_without_dense_allocation ... ok
+test every_assignment_excluded_is_proved_unsat_with_the_oracle_running ... ok
+test an_oracle_model_is_verified_and_ends_the_search ... ok
+test small_pigeonhole_is_exact_with_and_without_symmetry_breaking ... ok
+test deterministic_generated_formulas_match_exhaustive_truth_tables ... ok
+test the_oracle_seed_changes_the_walk_but_never_the_answer ... ok
+test hybrid_search_model_and_search_counts_are_deterministic ... ok
+
+test result: ok. 16 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.15s
+
+     Running tests\parallel.rs (target\release\deps\parallel-85c8b32895c0a73f.exe)
+
+running 7 tests
+test empty_conflicting_units_and_output_prefix_contract ... ok
+test sparse_ids_duplicates_and_tautologies_preserve_models ... ok
+test certified_large_php_and_asymmetric_deleted_edge_remain_exact ... ok
+test sat_winner_is_valid_while_other_cubes_may_cancel ... ok
+test every_cube_can_contain_the_only_satisfying_assignment ... ok
+test all_two_variable_formulas_agree_with_brute_force ... ok
+test deterministic_random_cnfs_match_serial_and_brute_force ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s
+
+     Running tests\parity.rs (target\release\deps\parity-2510743e893fade3.exe)
+
+running 13 tests
+test formulas_without_parity_are_left_alone ... ok
+test elimination_reveals_units_and_equivalences ... ok
+test hybrid::cdcl::deterministic_import_tests::beacon_publishes_whole_batches_and_the_remainder_only_on_flush ... ok
+test hybrid::cdcl::deterministic_import_tests::oracle_model_ends_the_search_before_any_decision ... ok
+test hybrid::cdcl::deterministic_import_tests::published_consequence_is_imported_and_promoted_to_root ... ok
+test hybrid::cdcl::deterministic_import_tests::ring_keeps_the_newest_clauses_and_lagging_readers_skip_ahead ... ok
+test an_inconsistent_system_is_refuted_without_search ... ok
+test hybrid::cdcl::deterministic_import_tests::walker_counters_survive_fixing_and_walking ... ok
+test the_four_clause_pattern_is_one_equation ... ok
+test the_largest_identifier_leaves_no_room_for_auxiliaries_and_stays_exact ... ok
+test planted_linear_systems_are_solved_without_a_conflict_explosion ... ok
+test injected_clauses_preserve_every_model_on_random_systems ... ok
+test wide_rows_are_chained_through_auxiliaries_that_stay_out_of_the_model ... ok
+
+test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.10s
+
+     Running tests\proof.rs (target\release\deps\proof-45fa1faa3476ca74.exe)
+
+running 14 tests
+test hybrid::cdcl::deterministic_import_tests::oracle_model_ends_the_search_before_any_decision ... ok
+test hybrid::cdcl::deterministic_import_tests::published_consequence_is_imported_and_promoted_to_root ... ok
+test hybrid::cdcl::deterministic_import_tests::ring_keeps_the_newest_clauses_and_lagging_readers_skip_ahead ... ok
+test hybrid::cdcl::deterministic_import_tests::walker_counters_survive_fixing_and_walking ... ok
+test hybrid::cdcl::deterministic_import_tests::beacon_publishes_whole_batches_and_the_remainder_only_on_flush ... ok
+test satisfiable_runs_return_a_verified_model_and_valid_steps ... ok
+test a_truncated_trace_is_rejected_by_the_checker ... ok
+test binary_and_text_traces_carry_the_same_steps ... ok
+test gaussian_refutations_are_certified_without_search ... ok
+test search_refutations_are_valid_drat ... ok
+test a_trace_larger_than_the_buffer_arrives_complete ... ok
+test injected_parity_rows_are_derived_before_the_search_uses_them ... ok
+test deleted_clauses_are_logged_and_the_trace_stays_valid ... ok
+test mixed_parity_and_clause_refutations_are_valid_drat ... ok
+
+test result: ok. 14 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.15s
+
+     Running tests\ramsey_symmetry.rs (target\release\deps\ramsey_symmetry-0c1bfcd8925a6b9a.exe)
+
+running 15 tests
+test hybrid::cdcl::deterministic_import_tests::beacon_publishes_whole_batches_and_the_remainder_only_on_flush ... ok
+test hybrid::cdcl::deterministic_import_tests::oracle_model_ends_the_search_before_any_decision ... ok
+test hybrid::cdcl::deterministic_import_tests::ring_keeps_the_newest_clauses_and_lagging_readers_skip_ahead ... ok
+test hybrid::cdcl::deterministic_import_tests::published_consequence_is_imported_and_promoted_to_root ... ok
+test symmetry_breaker::tests::the_order_propagates_by_unit_resolution_along_a_tied_prefix ... ok
+test hybrid::cdcl::deterministic_import_tests::walker_counters_survive_fixing_and_walking ... ok
+test symmetry_breaker::tests::a_variable_beyond_the_formula_is_rejected - should panic ... ok
+test symmetry_breaker::tests::groups_of_different_length_are_rejected - should panic ... ok
+test symmetry_breaker::tests::shared_positions_are_skipped_and_calls_do_not_share_auxiliaries ... ok
+test ramsey_symmetry::tests::edges_are_numbered_like_the_generator_does ... ok
+test ramsey_symmetry::tests::ramsey_formulas_are_vertex_symmetric_and_others_are_not ... ok
+test the_ordering_is_refused_on_a_formula_that_is_not_symmetric ... ok
+test symmetry_breaker::tests::the_clauses_hold_exactly_when_the_first_group_is_not_greater ... ok
+test ramsey_symmetry::tests::every_graph_keeps_an_isomorphic_copy ... ok
+test known_ramsey_numbers_survive_the_injected_ordering ... ok
+
+test result: ok. 15 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.64s
+
+     Running tests\recubing.rs (target\release\deps\recubing-981048b03b372ed3.exe)
+
+running 11 tests
+test hybrid::cdcl::deterministic_import_tests::oracle_model_ends_the_search_before_any_decision ... ok
+test hybrid::cdcl::deterministic_import_tests::ring_keeps_the_newest_clauses_and_lagging_readers_skip_ahead ... ok
+test hybrid::cdcl::deterministic_import_tests::published_consequence_is_imported_and_promoted_to_root ... ok
+test hybrid::cdcl::deterministic_import_tests::walker_counters_survive_fixing_and_walking ... ok
+test hybrid::cdcl::deterministic_import_tests::beacon_publishes_whole_batches_and_the_remainder_only_on_flush ... ok
+test recube_frontier_limit_resumes_the_parent_without_duplicate_start_count ... ok
+test recube_filter_panic_unwinds_the_scoped_workers_instead_of_proving_unsat ... ok
+test recube_malformed_filter_never_discards_an_unknown_cube ... ok
+test recube_no_representable_split_variables_resumes_unbounded ... ok
+test recube_round_trip_calls_non_send_filter_again_and_preserves_coverage ... ok
+test recube_preserves_sat_models_on_small_exhaustive_formulas ... ok
+
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\reignition.rs (target\release\deps\reignition-00ecfe590a39df4f.exe)
+
+running 15 tests
+test hybrid::cdcl::deterministic_import_tests::oracle_model_ends_the_search_before_any_decision ... ok
+test hybrid::cdcl::deterministic_import_tests::published_consequence_is_imported_and_promoted_to_root ... ok
+test hybrid::cdcl::deterministic_import_tests::walker_counters_survive_fixing_and_walking ... ok
+test root_conflicts_do_not_request_a_reignition ... ok
+test hybrid_pipeline_exposes_the_oracle_counters ... ok
+test hybrid::cdcl::deterministic_import_tests::ring_keeps_the_newest_clauses_and_lagging_readers_skip_ahead ... ok
+test zero_interval_or_zero_flips_preserve_the_plain_search_exactly ... ok
+test hybrid::cdcl::deterministic_import_tests::beacon_publishes_whole_batches_and_the_remainder_only_on_flush ... ok
+test sparse_identifiers_and_repeated_literals_survive_reignition ... ok
+test satisfiable_instances_are_solved_by_the_oracle_or_by_the_search_it_seeds ... ok
+test the_oracle_ignites_without_compromising_the_unsat_proof ... ok
+test reignited_search_is_deterministic_in_models_and_counts ... ok
+test reignited_solver_matches_small_exhaustive_truth_tables ... ok
+test larger_conflict_run_preserves_learning_backjumps_and_clause_cleanup ... ok
+test reignition_happens_only_at_the_start_and_at_restarts ... ok
+
+test result: ok. 15 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests\serial.rs (target\release\deps\serial-d4a7dc89d441f041.exe)
+
+running 11 tests
+test tests::cdcl_learns_a_root_unit ... ok
+test tests::cdcl_resolves_multiple_reasons_and_skips_a_decision_level ... ok
+test tests::edge_cases_and_prefix_contract ... ok
+test tests::vsids_prioritizes_the_highest_occurrence_variable ... ok
+test tests::watched_duplicates_tautologies_and_moves ... ok
+test tests::exhaustive_three_variable_sign_formulas ... ok
+test tests::cdcl_pigeonhole_unsat_reclaims_learned_clauses ... ok
+test tests::long_unit_chain_avoids_recursive_stack ... ok
+test tests::exhaustive_two_variable_formulas ... ok
+test tests::cdcl_random_three_cnf_matches_exhaustive_search ... ok
+test tests::generated_formulas_match_exhaustive_search ... ok
+
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.12s
+
+     Running tests\swarm.rs (target\release\deps\swarm-ccd96696d1a92ed3.exe)
+
+running 20 tests
+test hybrid::cdcl::deterministic_import_tests::beacon_publishes_whole_batches_and_the_remainder_only_on_flush ... ok
+test hybrid::cdcl::deterministic_import_tests::ring_keeps_the_newest_clauses_and_lagging_readers_skip_ahead ... ok
+test hybrid::cdcl::deterministic_import_tests::oracle_model_ends_the_search_before_any_decision ... ok
+test hybrid::cdcl::deterministic_import_tests::walker_counters_survive_fixing_and_walking ... ok
+test hybrid::cdcl::deterministic_import_tests::published_consequence_is_imported_and_promoted_to_root ... ok
+test the_oracle_may_find_the_unique_model_before_any_cube_starts ... ok
+test root_sat_and_root_unsat_do_not_spawn_workers ... ok
+test conflict_search_publishes_glue_clauses_and_reignites ... ok
+test persistent_single_worker_keeps_learning_sound_across_multiple_cubes ... ok
+test shared_conflict_pool_preserves_unsat_with_persistent_workers ... ok
+test symmetry_breaking_runs_before_cubing_in_the_parallel_pipeline ... ok
+test published_clauses_are_entailed_by_all_models_of_a_satisfiable_formula ... ok
+test the_parallel_pipeline_hands_the_observer_to_the_swarm ... ok
+test empty_and_single_slot_sharing_pools_finish_without_deadlock ... ok
+test unsatisfiable_cubes_cannot_poison_the_unique_satisfiable_cube ... ok
+test an_observer_does_not_change_the_search ... ok
+test unsat_requires_every_generated_cube_to_be_processed ... ok
+test sparse_ids_tautologies_and_repeated_literals_remain_exact ... ok
+test progress_counters_end_at_the_totals_of_the_report ... ok
+test swarm_matches_small_exhaustive_truth_tables_with_sharing_on_and_off ... ok
+
+test result: ok. 20 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests\symmetry.rs (target\release\deps\symmetry-9339d41753ce8420.exe)
+
+running 8 tests
+test externally_constrained_auxiliary_is_not_private ... ok
+test extra_units_break_symmetry_without_losing_sat_models ... ok
+test canonical_pigeonholes_sat_and_unsat ... ok
+test private_chain_auxiliaries_preserve_original_models ... ok
+test deleting_one_exclusion_makes_overfull_pigeonhole_sat ... ok
+test pigeonhole_15_14_is_root_conflict ... ok
+test variable_clause_and_literal_permutations_preserve_results ... ok
+test deterministic_near_pigeonholes_agree_with_brute_force ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\symmetry_breaking.rs (target\release\deps\symmetry_breaking-4a844d80fbc98df7.exe)
+
+running 13 tests
+test hybrid::cdcl::deterministic_import_tests::published_consequence_is_imported_and_promoted_to_root ... ok
+test hybrid::cdcl::deterministic_import_tests::oracle_model_ends_the_search_before_any_decision ... ok
+test hybrid::cdcl::deterministic_import_tests::ring_keeps_the_newest_clauses_and_lagging_readers_skip_ahead ... ok
+test disabling_the_layer_leaves_the_formula_alone ... ok
+test rigid_formulas_get_no_predicates ... ok
+test hybrid::cdcl::deterministic_import_tests::beacon_publishes_whole_batches_and_the_remainder_only_on_flush ... ok
+test hybrid::cdcl::deterministic_import_tests::walker_counters_survive_fixing_and_walking ... ok
+test renamed_variables_keep_the_answer_exact ... ok
+test every_generator_is_an_automorphism_of_the_formula ... ok
+test satisfiable_symmetric_instances_keep_a_model ... ok
+test predicates_preserve_satisfiability_on_exhaustive_random_formulas ... ok
+test pigeonhole_is_refuted_at_the_root_without_built_in_knowledge ... ok
+test predicates_preserve_satisfiability_on_structured_formulas ... ok
+
+test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.14s
+
+     Running tests\veripb.rs (target\release\deps\veripb-c532f5efb2cf78ef.exe)
+
+running 15 tests
+test hybrid::cdcl::deterministic_import_tests::beacon_publishes_whole_batches_and_the_remainder_only_on_flush ... ok
+test the_official_checker_verifies_the_traces ... ignored, needs the official `veripb` binary on PATH
+test wide_fuzz_of_certified_runs ... ignored, a wide differential run, meant for release builds
+test hybrid::cdcl::deterministic_import_tests::walker_counters_survive_fixing_and_walking ... ok
+test hybrid::cdcl::deterministic_import_tests::oracle_model_ends_the_search_before_any_decision ... ok
+test hybrid::cdcl::deterministic_import_tests::ring_keeps_the_newest_clauses_and_lagging_readers_skip_ahead ... ok
+test hybrid::cdcl::deterministic_import_tests::published_consequence_is_imported_and_promoted_to_root ... ok
+test the_trace_is_framed_as_a_veripb_3_proof ... ok
+test a_forged_dominance_step_is_rejected ... ok
+test other_symmetric_families_are_certified_too ... ok
+test parity_and_symmetry_share_one_trace ... ok
+test the_benchmark_instance_is_certified_with_symmetry_on ... ok
+test pigeonhole_is_refuted_with_certified_symmetry_breaking ... ok
+test random_symmetric_formulas_produce_valid_traces ... ok
+test learned_and_deleted_clauses_are_logged_as_rup_and_deletion_steps ... ok
+
+test result: ok. 13 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out; finished in 0.10s
+

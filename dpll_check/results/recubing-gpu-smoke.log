@@ -1,0 +1,9 @@
+c gpu: NVIDIA GeForce RTX 4060 Laptop GPU (dispositivo 0, capacidad de computo 8.9); VRAM 7106 MiB libres de 8188 MiB
+c gpu: 9.0 MiB reservados; formula subida y releida sin diferencias (45 clausulas, 100 literales); lotes de hasta 65536 cubos de 32 literales; quedan 7074 MiB libres (2286.2 ms)
+c gpu: sonda de 40 cubos de un literal en 0.1 ms (396040 cubos/s): 0 UNSAT, 0 SAT, 40 sin decidir
+c gpu: prefiltro Cube and Conquer listo; los cubos no decididos pasan al enjambre CPU
+c recube-smoke.cnf: 20 variables, 45 clausulas, modo swarm
+c recubing: yielded=2, splits=2, leaves=2048, gpu_filtered=2048
+c 2287.7 ms: simetria 0 generadores, 0 predicados (0.0 ms); 7 decisiones, 2 conflictos, 0 re-igniciones
+c gpu: gpu_filtered=2048 cubos refutados antes de llegar a CPU
+s UNSATISFIABLE

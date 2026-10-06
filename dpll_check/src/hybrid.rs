@@ -172,6 +172,30 @@ pub fn solve_hybrid_parallel_with_filter(
     ParallelHybridReport { model, symmetry, parity, swarm, conquer_ms }
 }
 
+// GPU y cubos duros se coordinan en el llamador; la ruta estática sigue intacta.
+pub fn solve_hybrid_parallel_with_recubing(
+    formula: &[Clause], config: HybridConfig, mut swarm: cdcl::SwarmConfig,
+    mut recube: cdcl::RecubeConfig, progress: Option<&cdcl::SwarmProgress>,
+    filter: Option<cdcl::CubeFilter<'_>>,
+) -> ParallelHybridReport {
+    use std::time::Instant;
+    swarm.reignition = cdcl::ReignitionConfig {
+        interval: config.reignition_interval, oracle: config.oracle,
+    };
+    recube.max_split_variable = recube.max_split_variable.min(
+        formula.iter().flatten().map(|literal| literal.unsigned_abs()).max().unwrap_or(0),
+    );
+    let (extended, symmetry, parity) = preprocess(formula, config, None);
+    let start = Instant::now();
+    let (model, swarm) = cdcl::solve_swarm_with_recubing(
+        &extended, swarm, recube, progress, filter,
+    );
+    let conquer_ms = start.elapsed().as_secs_f64() * 1000.0;
+    let model = restrict(model, formula, &parity);
+    if let Some(model) = &model { assert!(verify_model(formula, model)); }
+    ParallelHybridReport { model, symmetry, parity, swarm, conquer_ms }
+}
+
 pub fn verify_model(formula: &[Clause], model: &[i32]) -> bool {
     use std::collections::BTreeMap;
     let mut values = BTreeMap::new();

@@ -3,6 +3,7 @@
 //   hunt <formula.cnf> [opciones]
 //     --workers K         enjambre de K workers; sin esta opcion, un solo hilo
 //     --cubes C           cubos por worker (4)
+//     --recube-conflicts C cede cubos tras C conflictos y los reenvía a la GPU (opcional)
 //     --no-share          enjambre sin intercambio de clausulas
 //     --no-symmetry       sin ruptura de simetrias
 //     --no-parity         sin capa de paridad
@@ -80,6 +81,7 @@ struct Options {
     heartbeat: Option<u64>,
     csv: Option<String>,
     use_gpu: bool,
+    recube: Option<hybrid::cdcl::RecubeConfig>,
 }
 
 fn parse_options(arguments: &[String]) -> Result<Options, String> {
@@ -88,7 +90,7 @@ fn parse_options(arguments: &[String]) -> Result<Options, String> {
         input: String::new(), workers: None, cubes: SwarmConfig::default().cubes_per_worker, share: true,
         symmetry: true, parity: true, ramsey_symm: None, flips: defaults.oracle.flips_per_variable,
         interval: defaults.reignition_interval, seed: None, proof: None, cap: u64::MAX, model: None,
-        preprocess_only: false, timeout: None, heartbeat: None, csv: None, use_gpu: false,
+        preprocess_only: false, timeout: None, heartbeat: None, csv: None, use_gpu: false, recube: None,
     };
     let mut index = 0;
     while index < arguments.len() {
@@ -103,6 +105,14 @@ fn parse_options(arguments: &[String]) -> Result<Options, String> {
         match flag {
             "--workers" => options.workers = Some(number(value(flag)?)?.max(1) as usize),
             "--cubes" => options.cubes = number(value(flag)?)?.max(1) as usize,
+            "--recube-conflicts" => {
+                let budget = usize::try_from(number(value(flag)?)?.max(1))
+                    .map_err(|_| "Presupuesto de conflictos demasiado grande")?;
+                options.recube = Some(hybrid::cdcl::RecubeConfig {
+                    max_conflicts_per_cube: budget,
+                    ..hybrid::cdcl::RecubeConfig::default()
+                });
+            }
             "--no-share" => options.share = false,
             "--no-symmetry" => options.symmetry = false,
             "--no-parity" => options.parity = false,
@@ -136,6 +146,9 @@ fn parse_options(arguments: &[String]) -> Result<Options, String> {
     }
     if options.use_gpu && (options.workers.is_none() || options.preprocess_only) {
         return Err("--use-gpu exige --workers y no admite --preprocess-only".into());
+    }
+    if options.recube.is_some() && (options.workers.is_none() || options.preprocess_only) {
+        return Err("--recube-conflicts exige --workers y no admite --preprocess-only".into());
     }
     Ok(options)
 }
@@ -238,12 +251,47 @@ fn row(prefix: &str, status: &str, total_ms: f64, parse_ms: f64, outcome: Option
 
 // Linea de estado del enjambre. `last` es el instante y los conflictos de la linea anterior:
 // el ritmo es el de ese tramo, no la media desde el arranque.
-fn status_line(elapsed: Duration, conflicts: u64, last: (Duration, u64), closed: u64, total: u64) -> String {
+fn status_line(
+    elapsed: Duration,
+    conflicts: u64,
+    last: (Duration, u64, u64),
+    closed: u64,
+    total: u64,
+    lbd_sum: u64,
+    restarts: u64,
+) -> String {
     let span = elapsed.saturating_sub(last.0).as_secs_f64();
-    let rate = if span > 0.0 { conflicts.saturating_sub(last.1) as f64 / span } else { 0.0 };
-    // Antes de cubicar (capas previas e ignicion del oraculo) no hay cubos que contar.
-    let cubes = if total == 0 { "sin cubos todavia".to_owned() } else { format!("cubos cerrados {closed}/{total}") };
-    format!("c status: t={}s, {conflicts} conflictos, {rate:.0} conflictos/s, {cubes}", elapsed.as_secs())
+    let rate = if span > 0.0 {
+        conflicts.saturating_sub(last.1) as f64 / span
+    } else {
+        0.0
+    };
+    let restart_rate = if span > 0.0 {
+        restarts.saturating_sub(last.2) as f64 / span
+    } else {
+        0.0
+    };
+
+    // Medida por conflicto: los terminales sin cláusula aprendida aportan LBD cero.
+    // Las lecturas atómicas independientes producen una instantánea aproximada.
+    let mean_lbd = if conflicts != 0 {
+        lbd_sum as f64 / conflicts as f64
+    } else {
+        0.0
+    };
+
+    let cubes = if total == 0 {
+        "sin cubos todavia".to_owned()
+    } else {
+        format!("cubos cerrados {closed}/{total}")
+    };
+
+    format!(
+        "c status: t={}s, {conflicts} conflictos, {rate:.0} conflictos/s, \
+         {cubes}; LBD_medio={mean_lbd:.1}, restarts={restarts}, \
+         restarts/s={restart_rate:.2}",
+        elapsed.as_secs(),
+    )
 }
 
 // Las dos capas previas a la busqueda, cada una sobre la formula original.
@@ -349,9 +397,15 @@ fn solve_hybrid_parallel_with_gpu(
     swarm: SwarmConfig,
     progress: Option<&SwarmProgress>,
     gpu: Option<&mut gpu_dispatcher::GpuConqueror>,
+    recube: Option<hybrid::cdcl::RecubeConfig>,
 ) -> hybrid::ParallelHybridReport {
     let Some(gpu) = gpu else {
-        return solve_hybrid_parallel_with_progress(formula, config, swarm, progress);
+        return match recube {
+            Some(recube) => hybrid::solve_hybrid_parallel_with_recubing(
+                formula, config, swarm, recube, progress, None,
+            ),
+            None => solve_hybrid_parallel_with_progress(formula, config, swarm, progress),
+        };
     };
     let max_cubes = gpu.plan().cubes;
     let max_cube_literals = gpu.plan().cube_literals;
@@ -393,9 +447,14 @@ fn solve_hybrid_parallel_with_gpu(
         }
         verdicts
     };
-    hybrid::solve_hybrid_parallel_with_filter(
-        formula, config, swarm, progress, Some(&mut filter),
-    )
+    match recube {
+        Some(recube) => hybrid::solve_hybrid_parallel_with_recubing(
+            formula, config, swarm, recube, progress, Some(&mut filter),
+        ),
+        None => hybrid::solve_hybrid_parallel_with_filter(
+            formula, config, swarm, progress, Some(&mut filter),
+        ),
+    }
 }
 
 fn run(options: &Options) -> Result<i32, String> {
@@ -451,6 +510,7 @@ fn run(options: &Options) -> Result<i32, String> {
     let gauge = Arc::new(Gauge::default());
     // Sin GPU, latido ni limite, el enjambre conserva su ruta sin observador.
     let gpu_active = conqueror.is_some();
+    let recube_active = options.recube.is_some();
     let progress = (mode == "swarm"
         && (options.heartbeat.is_some() || options.timeout.is_some() || gpu_active))
         .then(|| Arc::new(SwarmProgress::default()));
@@ -461,7 +521,8 @@ fn run(options: &Options) -> Result<i32, String> {
         std::thread::spawn(move || {
             let mut next = heartbeat;
             // Instante y conflictos de la ultima linea `c status:`.
-            let mut last = (Duration::ZERO, 0);
+            // Instante, conflictos y reinicios de la última publicación.
+            let mut last = (Duration::ZERO, 0u64, 0u64);
             loop {
                 std::thread::sleep(Duration::from_millis(100));
                 let elapsed = started.elapsed();
@@ -479,19 +540,48 @@ fn run(options: &Options) -> Result<i32, String> {
                 // finales, y esta linea es lo unico que queda de la busqueda.
                 if let Some(progress) = progress.as_deref().filter(|_| beat || expired) {
                     let conflicts = progress.conflicts.load(Ordering::Relaxed);
+                    let lbd_sum = progress.lbd_sum.load(Ordering::Relaxed);
+                    let restarts = progress.restarts.load(Ordering::Relaxed);
                     let cpu_closed = progress.cubes_closed.load(Ordering::Relaxed);
                     let total = progress.cubes_total.load(Ordering::Relaxed);
+                    let recube_suffix = if recube_active {
+                        format!("; recubings={}, yielded={}",
+                            progress.cubes_split.load(Ordering::Relaxed),
+                            progress.cubes_yielded.load(Ordering::Relaxed))
+                    } else {
+                        String::new()
+                    };
+
                     if gpu_active {
                         let gpu_filtered = progress.gpu_filtered.load(Ordering::Relaxed);
                         eprintln!(
-                            "{}; gpu_filtered={gpu_filtered}",
-                            status_line(elapsed, conflicts, last,
-                                cpu_closed.saturating_add(gpu_filtered), total),
+                            "{}{recube_suffix}; gpu_filtered={gpu_filtered}",
+                            status_line(
+                                elapsed,
+                                conflicts,
+                                last,
+                                cpu_closed.saturating_add(gpu_filtered),
+                                total,
+                                lbd_sum,
+                                restarts,
+                            ),
                         );
                     } else {
-                        eprintln!("{}", status_line(elapsed, conflicts, last, cpu_closed, total));
+                        eprintln!(
+                            "{}{recube_suffix}",
+                            status_line(
+                                elapsed,
+                                conflicts,
+                                last,
+                                cpu_closed,
+                                total,
+                                lbd_sum,
+                                restarts,
+                            ),
+                        );
                     }
-                    last = (elapsed, conflicts);
+
+                    last = (elapsed, conflicts, restarts);
                 }
                 if expired {
                     if csv {
@@ -512,9 +602,17 @@ fn run(options: &Options) -> Result<i32, String> {
             workers, cubes_per_worker: options.cubes, share_enabled: options.share, ..SwarmConfig::default()
         };
         let report = solve_hybrid_parallel_with_gpu(
-            &formula, config, swarm, progress.as_deref(), conqueror.as_mut(),
+            &formula, config, swarm, progress.as_deref(), conqueror.as_mut(), options.recube,
         );
         let stats = &report.swarm;
+        if recube_active {
+            eprintln!(
+                "c recubing: yielded={}, splits={}, leaves={}, gpu_filtered={}",
+                stats.cubes_yielded, stats.cubes_split,
+                stats.cubes_generated - stats.cubes_split,
+                progress.as_ref().map_or(0, |p| p.gpu_filtered.load(Ordering::Relaxed)),
+            );
+        }
         Outcome {
             model: report.model, symmetry: report.symmetry, parity: report.parity, search: stats.total,
             search_ms: report.conquer_ms,
@@ -665,18 +763,47 @@ p cnf 3 3
     #[test]
     fn the_status_line_gives_the_rate_since_the_previous_one() {
         let seconds = Duration::from_secs;
-        // 90 000 conflictos en los 30 s desde la linea anterior, no 120 000 en 60 s.
+
         assert_eq!(
-            status_line(seconds(60), 120_000, (seconds(30), 30_000), 3, 64),
-            "c status: t=60s, 120000 conflictos, 3000 conflictos/s, cubos cerrados 3/64",
+            status_line(
+                seconds(60),
+                120_000,
+                (seconds(30), 30_000, 390),
+                3,
+                64,
+                600_000,
+                450,
+            ),
+            "c status: t=60s, 120000 conflictos, 3000 conflictos/s, \
+             cubos cerrados 3/64; LBD_medio=5.0, restarts=450, restarts/s=2.00",
         );
-        // Primera linea, antes de que el enjambre haya generado los cubos.
+
         assert_eq!(
-            status_line(seconds(30), 0, (Duration::ZERO, 0), 0, 0),
-            "c status: t=30s, 0 conflictos, 0 conflictos/s, sin cubos todavia",
+            status_line(
+                seconds(30),
+                0,
+                (Duration::ZERO, 0, 0),
+                0,
+                0,
+                0,
+                0,
+            ),
+            "c status: t=30s, 0 conflictos, 0 conflictos/s, \
+             sin cubos todavia; LBD_medio=0.0, restarts=0, restarts/s=0.00",
         );
-        // Dos lineas en el mismo instante no dividen por cero.
-        assert!(status_line(seconds(30), 500, (seconds(30), 400), 0, 16).contains(", 0 conflictos/s, "));
+
+        let same_instant = status_line(
+            seconds(30),
+            500,
+            (seconds(30), 400, 2),
+            0,
+            16,
+            2_000,
+            3,
+        );
+        assert!(same_instant.contains(", 0 conflictos/s, "));
+        assert!(same_instant.contains("LBD_medio=4.0"));
+        assert!(same_instant.ends_with("restarts=3, restarts/s=0.00"));
     }
 
     #[test]

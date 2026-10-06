@@ -1,0 +1,15 @@
+warn: could not canonicalize path C:\Users\yemsy
+    Finished `release` profile [optimized] target(s) in 0.03s
+     Running `target\release\hunt.exe r_5_5_43.cnf --ramsey-symm 43 --use-gpu --workers 16 --heartbeat 30 --cubes 1024`
+c symm: K_43 simetrica en los vertices; 5082 clausulas y 1680 variables auxiliares anadidas (1304.2 ms)
+c gpu: NVIDIA GeForce RTX 4060 Laptop GPU (dispositivo 0, capacidad de computo 8.9); VRAM 7106 MiB libres de 8188 MiB
+c gpu: 129.9 MiB reservados; formula subida y releida sin diferencias (1930278 clausulas, 19267080 literales); lotes de hasta 65536 cubos de 32 literales; quedan 6946 MiB libres (1926.6 ms)
+c gpu: sonda de 111 cubos de un literal en 3816.0 ms (29 cubos/s): 1 UNSAT, 0 SAT, 110 sin decidir
+c gpu: prefiltro Cube and Conquer listo; los cubos no decididos pasan al enjambre CPU
+c r_5_5_43.cnf: 2583 variables, 1930278 clausulas, modo swarm
+c t=30s traza=0 bytes, 0 lineas
+c status: t=30s, 13632 conflictos, 454 conflictos/s, cubos cerrados 15914/16384; LBD_medio=15.4, restarts=778, restarts/s=25.93; gpu_filtered=15914
+c t=60s traza=0 bytes, 0 lineas
+c status: t=60s, 210048 conflictos, 6530 conflictos/s, cubos cerrados 15914/16384; LBD_medio=27.0, restarts=4196, restarts/s=113.63; gpu_filtered=15914
+c t=90s traza=0 bytes, 0 lineas
+c status: t=90s, 449216 conflictos, 7973 conflictos/s, cubos cerrados 15914/16384; LBD_medio=25.4, restarts=8667, restarts/s=149.05; gpu_filtered=15914
