@@ -7,9 +7,10 @@
 // variables que quedan forzadas y las filas 0 = 1, que demuestran que el sistema no tiene
 // solucion.
 //
-// En esta fase es una herramienta aislada: no lee ni toca el CDCL. El motor ya hace una
-// reduccion gaussiana como preproceso (hybrid_parity.rs); este modulo es la base de un
-// propagador que viva dentro de la busqueda.
+// Dentro de la busqueda la matriz no se toca: `bind` traduce una vez la forma reducida a
+// los indices de variable del motor y `propagate_trail` evalua cada fila bajo la asignacion
+// actual. Es propagacion fila a fila sobre una matriz fija, no eliminacion incremental: lo
+// que solo se deduce combinando filas bajo una asignacion parcial no se ve.
 //
 // Apagado (`new(false)`) no reserva memoria y todas sus operaciones vuelven sin hacer nada.
 use std::collections::HashMap;
@@ -22,6 +23,16 @@ pub enum Gf2Outcome {
     Consistent { rank: usize },
     // Alguna combinacion de las ecuaciones da 0 = 1.
     Contradiction,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Gf2PropagationResult {
+    // Ninguna fila, desde la indicada, fuerza ni contradice nada.
+    Idle,
+    // A la fila `row` le queda una sola variable libre, que debe valer `value`.
+    Unit { row: usize, variable: u32, value: bool },
+    // La fila `row` esta asignada por completo y su XOR no da el termino independiente.
+    Conflict { row: usize },
 }
 
 pub struct Gf2Propagator {
@@ -41,6 +52,11 @@ pub struct Gf2Propagator {
     // Columna pivote de cada fila de la forma reducida.
     pivots: Vec<u32>,
     inconsistent: bool,
+    // La forma reducida sobre los indices de variable del motor: las variables de todas las
+    // filas, seguidas; donde empieza cada fila; y su termino independiente.
+    bound: Vec<u32>,
+    bound_starts: Vec<u32>,
+    bound_constants: Vec<bool>,
 }
 
 impl Gf2Propagator {
@@ -50,6 +66,7 @@ impl Gf2Propagator {
             enabled, variables: Vec::new(), column_of: HashMap::new(), terms: Vec::new(),
             ends: Vec::new(), constants: Vec::new(), words: 0, matrix: Vec::new(),
             pivots: Vec::new(), inconsistent: false,
+            bound: Vec::new(), bound_starts: Vec::new(), bound_constants: Vec::new(),
         }
     }
     pub fn is_enabled(&self) -> bool {
@@ -169,6 +186,59 @@ impl Gf2Propagator {
             (variables.len() == 1).then(|| (variables[0], constant))
         }).collect()
     }
+    // Enlaza la forma reducida con el motor: `index_of` da el indice interno de cada
+    // variable. Se llama una vez, despues de `eliminate`; la busqueda ya no toca la matriz.
+    pub fn bind(&mut self, index_of: impl Fn(u32) -> u32) {
+        self.bound.clear();
+        self.bound_starts.clear();
+        self.bound_constants.clear();
+        if !self.enabled || self.inconsistent {
+            return;
+        }
+        self.bound_starts.push(0);
+        for index in 0..self.rank() {
+            let (variables, constant) = self.row(index);
+            self.bound.extend(variables.into_iter().map(&index_of));
+            self.bound_starts.push(self.bound.len() as u32);
+            self.bound_constants.push(constant);
+        }
+    }
+    pub fn bound_rows(&self) -> usize {
+        self.bound_constants.len()
+    }
+    // Variables, en indices del motor, de la fila enlazada `row`.
+    pub fn bound_row(&self, row: usize) -> &[u32] {
+        &self.bound[self.bound_starts[row] as usize..self.bound_starts[row + 1] as usize]
+    }
+    // Evalua las filas enlazadas, desde `start`, bajo la asignacion del motor y devuelve la
+    // primera que fuerza o contradice. `values` va indexado por literal: el de la variable
+    // v es `values[2 * v]`, con 1 verdadero, -1 falso y 0 libre.
+    pub fn propagate_trail(&self, values: &[i8], start: usize) -> Gf2PropagationResult {
+        for row in start..self.bound_constants.len() {
+            // Paridad que le falta a la fila: termino independiente mas lo ya asignado.
+            let mut parity = self.bound_constants[row];
+            let mut free = 0;
+            let mut open = 0;
+            for &variable in self.bound_row(row) {
+                match values[(variable << 1) as usize] {
+                    0 => {
+                        open += 1;
+                        if open == 2 {
+                            break;
+                        }
+                        free = variable;
+                    }
+                    value => parity ^= value > 0,
+                }
+            }
+            match open {
+                0 if parity => return Gf2PropagationResult::Conflict { row },
+                1 => return Gf2PropagationResult::Unit { row, variable: free, value: parity },
+                _ => {}
+            }
+        }
+        Gf2PropagationResult::Idle
+    }
 }
 
 #[cfg(test)]
@@ -199,9 +269,52 @@ mod tests {
         assert_eq!(gf2.eliminate(), Gf2Outcome::Disabled);
         assert_eq!((gf2.equations(), gf2.variables(), gf2.rank()), (0, 0, 0));
         assert!(gf2.units().is_empty() && !gf2.is_enabled());
+        gf2.bind(|id| id);
+        assert_eq!(gf2.propagate_trail(&[], 0), Gf2PropagationResult::Idle);
         let reserved = gf2.variables.capacity() + gf2.column_of.capacity() + gf2.terms.capacity()
-            + gf2.ends.capacity() + gf2.constants.capacity() + gf2.matrix.capacity() + gf2.pivots.capacity();
+            + gf2.ends.capacity() + gf2.constants.capacity() + gf2.matrix.capacity() + gf2.pivots.capacity()
+            + gf2.bound.capacity() + gf2.bound_starts.capacity() + gf2.bound_constants.capacity();
         assert_eq!(reserved, 0);
+    }
+
+    // Asignacion del motor: `values[2 * v]` es el valor de la variable v.
+    fn assignment(variables: usize, assigned: &[(u32, bool)]) -> Vec<i8> {
+        let mut values = vec![0_i8; 2 * variables];
+        for &(variable, value) in assigned {
+            values[(variable << 1) as usize] = if value { 1 } else { -1 };
+            values[(variable << 1 | 1) as usize] = if value { -1 } else { 1 };
+        }
+        values
+    }
+
+    #[test]
+    fn rows_are_evaluated_under_the_assignment_without_touching_the_matrix() {
+        // Dos filas independientes sobre los indices 0..5: x0 ^ x1 ^ x2 = 1 y x3 ^ x4 = 0.
+        let mut gf2 = Gf2Propagator::new(true);
+        gf2.add_xor(&[10, 11, 12], true);
+        gf2.add_xor(&[13, 14], false);
+        assert_eq!(gf2.eliminate(), Gf2Outcome::Consistent { rank: 2 });
+        gf2.bind(|id| id - 10);
+        assert_eq!(gf2.bound_rows(), 2);
+        assert_eq!((gf2.bound_row(0), gf2.bound_row(1)), (&[0, 1, 2][..], &[3, 4][..]));
+        // Dos libres en cada fila: nada que decir.
+        assert_eq!(gf2.propagate_trail(&assignment(5, &[(0, true)]), 0), Gf2PropagationResult::Idle);
+        // x0 = 1, x2 = 1 fuerzan x1 = 1 ^ 1 ^ 1 = 1.
+        let values = assignment(5, &[(0, true), (2, true)]);
+        assert_eq!(gf2.propagate_trail(&values, 0), Gf2PropagationResult::Unit { row: 0, variable: 1, value: true });
+        assert_eq!(gf2.propagate_trail(&values, 1), Gf2PropagationResult::Idle);
+        // x3 = 1 fuerza x4 = 1; se encuentra aunque la fila 0 no diga nada.
+        assert_eq!(
+            gf2.propagate_trail(&assignment(5, &[(3, true)]), 0),
+            Gf2PropagationResult::Unit { row: 1, variable: 4, value: true },
+        );
+        // Fila completa con la paridad equivocada: conflicto. Con la correcta, silencio.
+        let wrong = assignment(5, &[(0, true), (1, true), (2, false)]);
+        assert_eq!(gf2.propagate_trail(&wrong, 0), Gf2PropagationResult::Conflict { row: 0 });
+        let right = assignment(5, &[(0, true), (1, true), (2, true), (3, false), (4, false)]);
+        assert_eq!(gf2.propagate_trail(&right, 0), Gf2PropagationResult::Idle);
+        // Evaluar no cambia la matriz.
+        assert_eq!(gf2.row(0), (vec![10, 11, 12], true));
     }
 
     #[test]

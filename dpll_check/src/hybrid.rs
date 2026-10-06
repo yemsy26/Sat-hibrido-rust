@@ -4,6 +4,8 @@ pub mod proof;
 pub mod parity;
 #[path = "hybrid_symmetry.rs"]
 pub mod symmetry;
+#[path = "gf2_engine.rs"]
+pub mod gf2;
 #[path = "hybrid_cdcl.rs"]
 pub mod cdcl;
 
@@ -165,6 +167,71 @@ pub fn verify_model(formula: &[Clause], model: &[i32]) -> bool {
     formula.iter().all(|clause| clause.iter().any(|&literal| {
         values.get(&literal.unsigned_abs()) == Some(&(literal > 0))
     }))
+}
+
+// Mejora 1 (GF(2)). Las ecuaciones XOR que la formula contiene, reducidas una sola vez por
+// Gauss-Jordan. Apagado no extrae nada.
+pub fn load_equations(formula: &[Clause], enabled: bool) -> (gf2::Gf2Propagator, gf2::Gf2Outcome) {
+    let mut equations = gf2::Gf2Propagator::new(enabled);
+    if enabled {
+        for (variables, constant) in parity::xor_equations(formula) {
+            equations.add_xor(&variables, constant);
+        }
+    }
+    let outcome = equations.eliminate();
+    (equations, outcome)
+}
+
+// Como `solve_hybrid`, con las ecuaciones XOR de la formula evaluadas dentro de la busqueda.
+// Son consecuencia de la formula original, luego tambien de la extendida por las otras
+// capas. Un sistema lineal contradictorio se responde sin buscar. No deja traza.
+pub fn solve_hybrid_gf2(formula: &[Clause], config: HybridConfig) -> HybridReport {
+    use std::time::Instant;
+    let (equations, outcome) = load_equations(formula, true);
+    if outcome == gf2::Gf2Outcome::Contradiction {
+        return HybridReport {
+            model: None, symmetry: SymmetryStats::default(), parity: ParityStats::default(),
+            cdcl: SolveStats { conflicts: 1, ..SolveStats::default() }, cdcl_ms: 0.0,
+        };
+    }
+    let (extended, symmetry, parity) = preprocess(formula, config, None);
+    let start = Instant::now();
+    let feedback = cdcl::ReignitionConfig {
+        interval: config.reignition_interval, oracle: config.oracle,
+    };
+    let (model, cdcl) = cdcl::solve_cdcl_with_equations(&extended, feedback, equations);
+    let cdcl_ms = start.elapsed().as_secs_f64() * 1000.0;
+    let model = restrict(model, formula, &parity);
+    if let Some(model) = &model {
+        assert!(verify_model(formula, model), "Model must satisfy original clauses");
+    }
+    HybridReport { model, symmetry, parity, cdcl, cdcl_ms }
+}
+
+// Como `solve_hybrid_parallel`, con las ecuaciones XOR evaluadas por todos los workers.
+pub fn solve_hybrid_parallel_gf2(
+    formula: &[Clause], config: HybridConfig, mut swarm: cdcl::SwarmConfig,
+) -> ParallelHybridReport {
+    use std::time::Instant;
+    let (equations, outcome) = load_equations(formula, true);
+    if outcome == gf2::Gf2Outcome::Contradiction {
+        let mut stats = cdcl::SwarmStats::default();
+        stats.total.conflicts = 1;
+        return ParallelHybridReport {
+            model: None, symmetry: SymmetryStats::default(), parity: ParityStats::default(),
+            swarm: stats, conquer_ms: 0.0,
+        };
+    }
+    swarm.reignition = cdcl::ReignitionConfig {
+        interval: config.reignition_interval, oracle: config.oracle,
+    };
+    let (extended, symmetry, parity) = preprocess(formula, config, None);
+    let start = Instant::now();
+    let (model, swarm) = cdcl::solve_swarm_with_equations(&extended, swarm, equations);
+    let conquer_ms = start.elapsed().as_secs_f64() * 1000.0;
+    let model = restrict(model, formula, &parity);
+    if let Some(model) = &model { assert!(verify_model(formula, model)); }
+    ParallelHybridReport { model, symmetry, parity, swarm, conquer_ms }
 }
 
 pub fn solve_hybrid(formula: &[Clause], config: HybridConfig) -> HybridReport {

@@ -1,5 +1,6 @@
 use std::collections::{HashSet, VecDeque};
 use super::proof::ProofLog;
+use super::gf2::{Gf2PropagationResult, Gf2Propagator};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
@@ -25,6 +26,9 @@ pub struct SolveStats {
     pub dropped_exports: usize,
     // Siempre 0 desde la Fase 12b: solo se importa en el nivel 0.
     pub import_backjumps: usize,
+    // Literales forzados y conflictos encontrados por las ecuaciones XOR (GF(2)).
+    pub gf2_propagations: usize,
+    pub gf2_conflicts: usize,
 }
 impl SolveStats {
     fn add_search(&mut self, other: Self) {
@@ -45,6 +49,8 @@ impl SolveStats {
         self.imported_clauses += other.imported_clauses;
         self.dropped_exports += other.dropped_exports;
         self.import_backjumps += other.import_backjumps;
+        self.gf2_propagations += other.gf2_propagations;
+        self.gf2_conflicts += other.gf2_conflicts;
     }
 }
 #[derive(Clone, Copy, Debug)]
@@ -691,6 +697,8 @@ struct State {
     propagated: u64,
     reignition_mark: u64,
     root_unsat: bool,
+    // Ecuaciones XOR reducidas, compartidas entre los workers; `None` es el motor clasico.
+    gf2: Option<Arc<Gf2Propagator>>,
     stats: SolveStats,
 }
 impl State {
@@ -731,6 +739,7 @@ impl State {
             propagated: 0,
             reignition_mark: 0,
             root_unsat: false,
+            gf2: None,
             stats,
         }
     }
@@ -790,8 +799,136 @@ impl State {
             }
         }
     }
-    // `head` recorre el propio trail hasta su cola (`trail.len()`): no hay cola de unidades.
+    // Propagacion completa: las clausulas hasta su punto fijo y, si hay ecuaciones XOR
+    // enlazadas, su turno; lo que ellas fuercen vuelve a pasar por las clausulas.
     fn propagate(&mut self) -> Option<Conflict> {
+        loop {
+            if let Some(conflict) = self.propagate_clauses() {
+                return Some(conflict);
+            }
+            // Sin ecuaciones, que es el motor clasico, esto es una comparacion por punto fijo.
+            let Some(gf2) = self.gf2.take() else { return None };
+            let step = self.propagate_equations(&gf2);
+            self.gf2 = Some(gf2);
+            match step {
+                Ok(true) => continue,
+                Ok(false) => return None,
+                Err(conflict) => return Some(conflict),
+            }
+        }
+    }
+    // Evalua cada fila reducida bajo la asignacion actual; la matriz no cambia. Una fila que
+    // fuerza o contradice se materializa como la clausula que lo justifica hoy, y desde ahi
+    // vigilancia, analisis y borrado son los de cualquier clausula aprendida. Esa clausula
+    // es consecuencia de la formula porque la fila lo es. `Ok(true)` si se asigno algo.
+    fn propagate_equations(&mut self, gf2: &Gf2Propagator) -> Result<bool, Conflict> {
+        let mut forced = false;
+        let mut row = 0;
+        loop {
+            match gf2.propagate_trail(&self.values, row) {
+                Gf2PropagationResult::Idle => return Ok(forced),
+                Gf2PropagationResult::Unit { row: found, variable, value } => {
+                    self.imply(gf2.bound_row(found), (variable << 1) | u32::from(!value));
+                    forced = true;
+                    row = found + 1;
+                }
+                Gf2PropagationResult::Conflict { row: found } => {
+                    return Err(self.contradict(gf2.bound_row(found)));
+                }
+            }
+        }
+    }
+    // Los literales hoy falsos de las variables de una fila, salvo el de `skip`.
+    fn falsified(&self, variables: &[u32], skip: u32, literals: &mut Vec<u32>) {
+        for &variable in variables {
+            if variable != skip {
+                // Si la variable es verdadera, su literal falso es el negativo.
+                literals.push((variable << 1) | u32::from(self.values[(variable << 1) as usize] > 0));
+            }
+        }
+    }
+    // LBD de una clausula materializada: niveles distintos de sus literales falsos, mas el
+    // nivel actual si lleva delante un literal implicado.
+    fn glue(&mut self, falsified: &[u32], implied: bool) -> u32 {
+        self.level_stamp += 1;
+        let mut lbd = 0;
+        if implied {
+            self.level_stamps[self.trail_limits.len()] = self.level_stamp;
+            lbd = 1;
+        }
+        for &literal in falsified {
+            let level = self.levels[variable_of(literal)] as usize;
+            if self.level_stamps[level] != self.level_stamp {
+                self.level_stamps[level] = self.level_stamp;
+                lbd += 1;
+            }
+        }
+        lbd
+    }
+    // Una fila deja libre solo la variable de `literal` y la fuerza a ese valor.
+    fn imply(&mut self, variables: &[u32], literal: u32) {
+        self.stats.gf2_propagations += 1;
+        if self.level() == 0 {
+            // En la raiz no hace falta antecedente: el analisis nunca lo mira.
+            self.assign_root(literal);
+            return;
+        }
+        let mut clause = std::mem::take(&mut self.learned);
+        clause.clear();
+        clause.push(literal);
+        self.falsified(variables, literal >> 1, &mut clause);
+        match clause.len() {
+            1 => {
+                // Fila de una sola variable: es una unidad de la formula y vive en la raiz.
+                self.backjump(0);
+                self.assign_root(literal);
+            }
+            2 => {
+                self.watch_binary(literal, clause[1]);
+                self.assign(literal, BINARY | clause[1]);
+            }
+            _ => {
+                // En la posicion 1, el falso de mayor nivel: es el otro vigilado.
+                let mut highest = 1;
+                for index in 2..clause.len() {
+                    if self.levels[variable_of(clause[index])] > self.levels[variable_of(clause[highest])] {
+                        highest = index;
+                    }
+                }
+                clause.swap(1, highest);
+                let lbd = self.glue(&clause[1..], true);
+                let reference = self.add_long(&clause, true, lbd);
+                self.assign(literal, reference);
+            }
+        }
+        self.learned = clause;
+    }
+    // Una fila esta asignada por completo con la paridad equivocada.
+    fn contradict(&mut self, variables: &[u32]) -> Conflict {
+        self.stats.gf2_conflicts += 1;
+        let mut clause = std::mem::take(&mut self.learned);
+        clause.clear();
+        self.falsified(variables, NONE, &mut clause);
+        // Delante, los falsos de mayor nivel: son los vigilados y el pivote del analisis.
+        clause.sort_unstable_by_key(|&literal| std::cmp::Reverse(self.levels[variable_of(literal)]));
+        // Si toda la fila se asigno por debajo del nivel actual, el conflicto es de ese nivel.
+        self.backjump(self.levels[variable_of(clause[0])] as usize);
+        let conflict = match *clause {
+            [literal] => Conflict::Binary(literal, literal),
+            [first, second] => {
+                self.watch_binary(first, second);
+                Conflict::Binary(first, second)
+            }
+            _ => {
+                let lbd = self.glue(&clause, false);
+                Conflict::Long(self.add_long(&clause, true, lbd))
+            }
+        };
+        self.learned = clause;
+        conflict
+    }
+    // `head` recorre el propio trail hasta su cola (`trail.len()`): no hay cola de unidades.
+    fn propagate_clauses(&mut self) -> Option<Conflict> {
         while self.head < self.trail.len() {
             let false_literal = self.trail[self.head] ^ 1;
             self.head += 1;
@@ -1354,8 +1491,26 @@ fn external(variables: &[u32], clause: &[u32], line: &mut Vec<i32>) {
         if literal & 1 == 0 { id } else { -id }
     }));
 }
+// Enlaza las ecuaciones reducidas con los indices de variable de este estado.
+fn attach_equations(state: &mut State, variables: &[u32], gf2: Option<Gf2Propagator>) {
+    let Some(mut gf2) = gf2 else { return };
+    gf2.bind(|id| variables.binary_search(&id).expect("Equation variables occur in the formula") as u32);
+    if gf2.bound_rows() > 0 {
+        state.gf2 = Some(Arc::new(gf2));
+    }
+}
 pub fn solve_cdcl(formula: &[Vec<i32>]) -> (Option<Vec<i32>>, SolveStats) {
-    solve_cdcl_inner(formula, None, None)
+    solve_cdcl_inner(formula, None, None, None)
+}
+// Como `solve_cdcl_with_reignition`, evaluando ademas en cada punto fijo las ecuaciones XOR
+// de `gf2`, que deben ser consecuencia de la formula. No admite traza: las clausulas que
+// justifican esas deducciones no son RUP.
+pub fn solve_cdcl_with_equations(
+    formula: &[Vec<i32>],
+    config: ReignitionConfig,
+    gf2: Gf2Propagator,
+) -> (Option<Vec<i32>>, SolveStats) {
+    solve_cdcl_inner(formula, Some(config), None, Some(gf2))
 }
 // Igual que `solve_cdcl_with_reignition`, registrando cada cláusula aprendida o borrada.
 // Toda cláusula aprendida es RUP; un resultado UNSAT termina con la cláusula vacía.
@@ -1364,24 +1519,26 @@ pub fn solve_cdcl_with_proof(
     config: ReignitionConfig,
     proof: &mut dyn ProofLog,
 ) -> (Option<Vec<i32>>, SolveStats) {
-    solve_cdcl_inner(formula, Some(config), Some(proof))
+    solve_cdcl_inner(formula, Some(config), Some(proof), None)
 }
 pub fn solve_cdcl_with_reignition(
     formula: &[Vec<i32>],
     config: ReignitionConfig,
 ) -> (Option<Vec<i32>>, SolveStats) {
-    solve_cdcl_inner(formula, Some(config), None)
+    solve_cdcl_inner(formula, Some(config), None, None)
 }
 fn solve_cdcl_inner(
     formula: &[Vec<i32>],
     config: Option<ReignitionConfig>,
     proof: Option<&mut dyn ProofLog>,
+    gf2: Option<Gf2Propagator>,
 ) -> (Option<Vec<i32>>, SolveStats) {
     let feedback = active(config);
     let prepared = prepare_formula(formula, feedback.map(|configuration| configuration.oracle));
     let Some((mut state, variables)) = prepared else {
         return (None, SolveStats { conflicts: 1, ..SolveStats::default() });
     };
+    attach_equations(&mut state, &variables, gf2);
     let control = SearchControl { cube: &[], cancel: None, sharing: None, proof };
     let (outcome, stats) = run_state(&mut state, &variables, feedback, control);
     match outcome {
@@ -1607,6 +1764,17 @@ fn swarm_worker(
     report
 }
 pub fn solve_swarm(formula: &[Vec<i32>], config: SwarmConfig) -> (Option<Vec<i32>>, SwarmStats) {
+    solve_swarm_inner(formula, config, None)
+}
+// Como `solve_swarm`, con las ecuaciones XOR de `gf2` evaluadas por todos los workers.
+pub fn solve_swarm_with_equations(
+    formula: &[Vec<i32>], config: SwarmConfig, gf2: Gf2Propagator,
+) -> (Option<Vec<i32>>, SwarmStats) {
+    solve_swarm_inner(formula, config, Some(gf2))
+}
+fn solve_swarm_inner(
+    formula: &[Vec<i32>], config: SwarmConfig, gf2: Option<Gf2Propagator>,
+) -> (Option<Vec<i32>>, SwarmStats) {
     let mut stats = SwarmStats::default();
     let feedback = active(Some(config.reignition));
     let prepared = prepare_formula(formula, feedback.map(|configuration| configuration.oracle));
@@ -1614,6 +1782,7 @@ pub fn solve_swarm(formula: &[Vec<i32>], config: SwarmConfig) -> (Option<Vec<i32
         stats.total.conflicts = 1;
         return (None, stats);
     };
+    attach_equations(&mut base, &variables, gf2);
     if !base.root_unsat && base.propagate().is_some() {
         base.root_unsat = true;
         base.stats.conflicts += 1;

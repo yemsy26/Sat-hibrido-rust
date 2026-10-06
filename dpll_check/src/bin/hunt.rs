@@ -6,8 +6,9 @@
 //     --no-share          enjambre sin intercambio de clausulas
 //     --no-symmetry       sin ruptura de simetrias
 //     --no-parity         sin capa de paridad
-//     --use-gf2           carga las ecuaciones XOR de la formula en el nucleo matricial GF(2)
-//                         (gf2_engine.rs), las reduce e informa; la busqueda aun no lo usa
+//     --use-gf2           reduce las ecuaciones XOR de la formula sobre GF(2) (gf2_engine.rs)
+//                         y las evalua dentro de la busqueda; si ya son contradictorias
+//                         responde UNSAT sin buscar. No admite --proof
 //     --flips F           flips por variable del oraculo (16)
 //     --interval I        conflictos entre re-igniciones (500); 0 apaga el oraculo
 //     --seed S            semilla del oraculo
@@ -27,14 +28,14 @@
 #[allow(dead_code)]
 #[path = "../hybrid.rs"]
 mod hybrid;
-// Mejora 1: modulo aislado, fuera del motor. El lanzador solo decide si existe.
-#[allow(dead_code)]
-#[path = "../gf2_engine.rs"]
-mod gf2_engine;
 
 use hybrid::cdcl::SwarmConfig;
 use hybrid::proof::PbProof;
-use hybrid::{solve_hybrid, solve_hybrid_parallel, solve_hybrid_with_proof, verify_model, HybridConfig, SolveStats};
+use hybrid::gf2 as gf2_engine;
+use hybrid::{
+    load_equations, solve_hybrid, solve_hybrid_gf2, solve_hybrid_parallel, solve_hybrid_parallel_gf2,
+    solve_hybrid_with_proof, verify_model, HybridConfig, SolveStats,
+};
 use std::fs::File;
 use std::io::{self, Write};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -110,6 +111,9 @@ fn parse_options(arguments: &[String]) -> Result<Options, String> {
     }
     if options.proof.is_some() && options.workers.is_some() {
         return Err("El enjambre no emite traza: --proof exige ejecutar en serie, sin --workers".into());
+    }
+    if options.proof.is_some() && options.use_gf2 {
+        return Err("--use-gf2 no admite --proof: las deducciones GF(2) todavia no se escriben en la traza".into());
     }
     Ok(options)
 }
@@ -255,18 +259,6 @@ fn preprocess(
     Ok(0)
 }
 
-// Mejora 1: carga en el nucleo matricial las ecuaciones XOR que la formula contiene y hace
-// la eliminacion inicial. Apagado no extrae nada. Solo informa: la busqueda no lo usa aun.
-fn load_gf2(formula: &Formula, gf2: &mut gf2_engine::Gf2Propagator) -> gf2_engine::Gf2Outcome {
-    if !gf2.is_enabled() {
-        return gf2_engine::Gf2Outcome::Disabled;
-    }
-    for (variables, constant) in hybrid::parity::xor_equations(formula) {
-        gf2.add_xor(&variables, constant);
-    }
-    gf2.eliminate()
-}
-
 fn describe_gf2(gf2: &gf2_engine::Gf2Propagator, outcome: gf2_engine::Gf2Outcome) -> String {
     use gf2_engine::Gf2Outcome;
     if gf2.equations() == 0 {
@@ -309,13 +301,25 @@ fn run(options: &Options) -> Result<i32, String> {
         options.flips, options.interval, formula.len(),
     );
     eprintln!("c {}: {variables} variables, {} clausulas, modo {mode}", options.input, formula.len());
-    // Sin --use-gf2 el modulo no reserva nada, no se extrae ninguna ecuacion y el motor
-    // trabaja exactamente como antes.
-    let mut gf2 = gf2_engine::Gf2Propagator::new(options.use_gf2);
-    if gf2.is_enabled() {
+    // Sin --use-gf2 no se extrae ninguna ecuacion y el motor es exactamente el clasico.
+    if options.use_gf2 {
         let start = Instant::now();
-        let outcome = load_gf2(&formula, &mut gf2);
+        let (gf2, outcome) = load_equations(&formula, true);
         eprintln!("c gf2: {} ({:.1} ms)", describe_gf2(&gf2, outcome), start.elapsed().as_secs_f64() * 1000.0);
+        if outcome == gf2_engine::Gf2Outcome::Contradiction && !options.preprocess_only {
+            // El sistema lineal ya da 0 = 1: ni preproceso, ni oraculo, ni enjambre.
+            let refuted = Outcome {
+                model: None, symmetry: Default::default(), parity: Default::default(),
+                search: SolveStats { conflicts: 1, ..SolveStats::default() }, search_ms: 0.0,
+                cubes: [0; 4], trace: [0, 0],
+            };
+            if options.csv.is_some() {
+                let total_ms = started.elapsed().as_secs_f64() * 1000.0;
+                println!("{}", row(&prefix, "UNSAT", total_ms, parse_ms, Some(&refuted), &Gauge::default()));
+            }
+            println!("s UNSATISFIABLE");
+            return Ok(20);
+        }
     }
 
     // Vigilante: progreso y limite de tiempo, sin tocar el motor.
@@ -354,7 +358,11 @@ fn run(options: &Options) -> Result<i32, String> {
         let swarm = SwarmConfig {
             workers, cubes_per_worker: options.cubes, share_enabled: options.share, ..SwarmConfig::default()
         };
-        let report = solve_hybrid_parallel(&formula, config, swarm);
+        let report = if options.use_gf2 {
+            solve_hybrid_parallel_gf2(&formula, config, swarm)
+        } else {
+            solve_hybrid_parallel(&formula, config, swarm)
+        };
         let stats = &report.swarm;
         Outcome {
             model: report.model, symmetry: report.symmetry, parity: report.parity, search: stats.total,
@@ -374,7 +382,7 @@ fn run(options: &Options) -> Result<i32, String> {
             search_ms: report.cdcl_ms, cubes: [0; 4], trace,
         }
     } else {
-        let report = solve_hybrid(&formula, config);
+        let report = if options.use_gf2 { solve_hybrid_gf2(&formula, config) } else { solve_hybrid(&formula, config) };
         Outcome {
             model: report.model, symmetry: report.symmetry, parity: report.parity, search: report.cdcl,
             search_ms: report.cdcl_ms, cubes: [0; 4], trace: [0, 0],
@@ -390,6 +398,12 @@ fn run(options: &Options) -> Result<i32, String> {
         outcome.symmetry.generators, outcome.symmetry.clauses, outcome.symmetry.ms,
         outcome.search.decisions, outcome.search.conflicts, outcome.search.reignitions,
     );
+    if options.use_gf2 {
+        eprintln!(
+            "c gf2: {} literales forzados y {} conflictos dentro de la busqueda",
+            outcome.search.gf2_propagations, outcome.search.gf2_conflicts,
+        );
+    }
     if options.proof.is_some() {
         eprintln!(
             "c traza: {} bytes, {} lineas, {} dominancias, {} borrados{}",
@@ -493,6 +507,9 @@ p cnf 3 3
         let arguments = |text: &str| -> Vec<String> { text.split_whitespace().map(str::to_owned).collect() };
         assert!(!parse_options(&arguments("f.cnf")).unwrap().use_gf2);
         assert!(parse_options(&arguments("f.cnf --use-gf2 --no-parity")).unwrap().use_gf2);
+        assert!(parse_options(&arguments("f.cnf --use-gf2 --workers 4")).unwrap().use_gf2);
+        // Las deducciones GF(2) no van a la traza: pedir ambas cosas es un error.
+        assert!(parse_options(&arguments("f.cnf --use-gf2 --proof p.pbp")).is_err());
         assert!(!gf2_engine::Gf2Propagator::new(false).is_enabled());
         assert!(gf2_engine::Gf2Propagator::new(true).is_enabled());
     }
@@ -509,14 +526,14 @@ p cnf 3 3
 
     #[test]
     fn the_matrix_is_fed_with_the_xors_of_the_formula() {
-        use gf2_engine::{Gf2Outcome, Gf2Propagator};
+        use gf2_engine::Gf2Outcome;
         // Tseitin sobre K4 con carga impar: cuatro ecuaciones que suman 0 = 1.
         let mut tseitin = Formula::new();
         for (vertex, incident) in [[1, 2, 3], [1, 4, 5], [2, 4, 6], [3, 5, 6]].iter().enumerate() {
             xor_clauses(incident, vertex == 0, &mut tseitin);
         }
-        let mut gf2 = Gf2Propagator::new(true);
-        assert_eq!(load_gf2(&tseitin, &mut gf2), Gf2Outcome::Contradiction);
+        let (gf2, outcome) = load_equations(&tseitin, true);
+        assert_eq!(outcome, Gf2Outcome::Contradiction);
         assert_eq!((gf2.equations(), gf2.variables(), gf2.rank()), (4, 6, 3));
         assert!(describe_gf2(&gf2, Gf2Outcome::Contradiction).contains("CONTRADICCION"));
 
@@ -524,19 +541,18 @@ p cnf 3 3
         let mut forced = vec![vec![4, 5, 6]];
         xor_clauses(&[1, 2], true, &mut forced);
         xor_clauses(&[1, 2, 3], false, &mut forced);
-        let mut gf2 = Gf2Propagator::new(true);
-        let outcome = load_gf2(&forced, &mut gf2);
+        let (gf2, outcome) = load_equations(&forced, true);
         assert_eq!(outcome, Gf2Outcome::Consistent { rank: 2 });
         assert_eq!(gf2.units(), vec![(3, true)]);
         assert_eq!(describe_gf2(&gf2, outcome), "2 ecuaciones XOR sobre 3 variables; rango 2, sin contradiccion, 1 variables forzadas");
 
         // Sin XOR no hay nada que cargar, y apagado ni siquiera se mira la formula.
         let plain = vec![vec![1, 2, 3], vec![-1, 2], vec![-2, 3, 4]];
-        let mut gf2 = Gf2Propagator::new(true);
-        assert_eq!(load_gf2(&plain, &mut gf2), Gf2Outcome::Consistent { rank: 0 });
-        assert!(describe_gf2(&gf2, Gf2Outcome::Consistent { rank: 0 }).contains("no contiene"));
-        let mut off = Gf2Propagator::new(false);
-        assert_eq!(load_gf2(&tseitin, &mut off), Gf2Outcome::Disabled);
+        let (gf2, outcome) = load_equations(&plain, true);
+        assert_eq!(outcome, Gf2Outcome::Consistent { rank: 0 });
+        assert!(describe_gf2(&gf2, outcome).contains("no contiene"));
+        let (off, outcome) = load_equations(&tseitin, false);
+        assert_eq!(outcome, Gf2Outcome::Disabled);
         assert_eq!(off.equations(), 0);
     }
 }
