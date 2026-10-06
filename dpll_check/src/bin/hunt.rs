@@ -19,14 +19,16 @@
 //     --timeout S         aborta a los S segundos (estado TIMEOUT, codigo 124)
 //     --heartbeat S       linea de progreso en stderr cada S segundos
 //     --csv ETIQUETA      una fila CSV en la salida estandar (`hunt --header` da la cabecera)
-//     --use-gpu           abre la GPU CUDA y reserva sus buffers para cube and conquer
-//                         (gpu_dispatcher.rs); pide compilar con `--features gpu`. En esta
-//                         fase la busqueda sigue entera en CPU
+//     --use-gpu           abre la GPU CUDA, compila su nucleo de propagacion unitaria y lo
+//                         prueba con una sonda de cubos (gpu_dispatcher.rs); pide compilar
+//                         con `--features gpu`. La busqueda sigue entera en CPU
 //
 // El motor no tiene puntos de control. En serie, el unico progreso observable desde fuera
 // es el crecimiento de la traza. El enjambre publica sus conflictos y cubos cerrados: con
 // --heartbeat o --timeout sale una linea `c status:` en cada latido y otra al agotar el limite.
-#![forbid(unsafe_code)]
+// `deny` y no `forbid`: lanzar un nucleo CUDA es una llamada `unsafe`, y gpu_dispatcher.rs
+// la permite en una sola funcion. En el resto del binario sigue siendo un error.
+#![deny(unsafe_code)]
 #![deny(warnings)]
 
 #[allow(dead_code)]
@@ -289,6 +291,9 @@ fn preprocess(
 // Lotes que la CPU enviara a la GPU: cubos por lote y literales por cubo como mucho.
 const GPU_BATCH_CUBES: usize = 1 << 16;
 const GPU_CUBE_DEPTH: usize = 32;
+// Tamano de la sonda de arranque, en literales de la formula que puede llegar a leer: con
+// formulas grandes son pocos cubos, para que no retrase la busqueda mas de unos segundos.
+const GPU_PROBE_WORK: usize = 1 << 31;
 
 // Abre la tarjeta, reserva sus buffers a la medida de la formula y la deja subida. Lo que
 // encuentra lo cuenta por stderr; la busqueda no se entera de que existe.
@@ -313,7 +318,25 @@ fn open_gpu(formula: &Formula) -> Result<gpu_dispatcher::GpuConqueror, String> {
         mib(plan.bytes()), plan.clauses, plan.literals, plan.cubes, GPU_CUBE_DEPTH,
         mib(conqueror.free_bytes().map_err(failed)?), start.elapsed().as_secs_f64() * 1000.0,
     );
-    eprintln!("c gpu: modo Cube and Conquer preparado. En esta fase ningun cubo se resuelve en la GPU: la busqueda sigue en CPU");
+    // Sonda: cubos de un solo literal (x1, no x1, x2, ...) por el nucleo, para ver que decide
+    // y a que ritmo con esta formula. Un cubo refutado aqui es un literal que falla.
+    let probes = (GPU_PROBE_WORK / plan.literals.max(1)).clamp(16, GPU_BATCH_CUBES).min(2 * plan.variables);
+    let cubes: Vec<Vec<i32>> = (1..=plan.variables as i32).flat_map(|id| [vec![id], vec![-id]]).take(probes).collect();
+    let start = Instant::now();
+    let verdicts = conqueror.dispatch_cubes(formula, &cubes);
+    let seconds = start.elapsed().as_secs_f64();
+    if let Some(error) = conqueror.last_error() {
+        return Err(format!("--use-gpu: {error}"));
+    }
+    let count = |wanted: fn(&gpu_dispatcher::SolveResult) -> bool| verdicts.iter().filter(|verdict| wanted(verdict)).count();
+    eprintln!(
+        "c gpu: sonda de {} cubos de un literal en {:.1} ms ({:.0} cubos/s): {} UNSAT, {} SAT, {} sin decidir",
+        cubes.len(), seconds * 1000.0, cubes.len() as f64 / seconds.max(1e-9),
+        count(|verdict| *verdict == gpu_dispatcher::SolveResult::Unsat),
+        count(|verdict| matches!(verdict, gpu_dispatcher::SolveResult::Sat(_))),
+        count(|verdict| *verdict == gpu_dispatcher::SolveResult::Unknown),
+    );
+    eprintln!("c gpu: modo Cube and Conquer preparado. La GPU filtra cubos por propagacion unitaria; la busqueda sigue en CPU y todavia no le envia ninguno");
     Ok(conqueror)
 }
 
