@@ -407,7 +407,7 @@ fn solve_hybrid_parallel_with_gpu(
             None => solve_hybrid_parallel_with_progress(formula, config, swarm, progress),
         };
     };
-    let max_cubes = gpu.plan().cubes;
+    let max_cubes = gpu.plan().cubes.min(hybrid::cdcl::CUBE_FILTER_BATCH_CUBES);
     let max_cube_literals = gpu.plan().cube_literals;
     let mut filter = |cubes: &[Vec<i32>]| -> Vec<hybrid::cdcl::CubeVerdict> {
         use gpu_dispatcher::SolveResult;
@@ -651,7 +651,7 @@ fn run(options: &Options) -> Result<i32, String> {
         let gpu_filtered = progress.as_deref().map_or(0, |progress| {
             progress.gpu_filtered.load(Ordering::Relaxed)
         });
-        eprintln!("c gpu: gpu_filtered={gpu_filtered} cubos refutados antes de llegar a CPU");
+        eprintln!("c gpu: gpu_filtered={gpu_filtered} cubos refutados por GPU");
     }
     if options.proof.is_some() {
         eprintln!(

@@ -92,6 +92,9 @@ impl Default for SwarmConfig {
         }
     }
 }
+// Límite de cada callback GPU, independiente de la frontera de la CPU.
+pub const CUBE_FILTER_BATCH_CUBES: usize = 65_536;
+
 #[derive(Clone, Copy, Debug)]
 pub struct RecubeConfig {
     pub max_conflicts_per_cube: usize,
@@ -105,7 +108,7 @@ impl Default for RecubeConfig {
         Self {
             max_conflicts_per_cube: 50_000,
             split_variables: 10,
-            max_live_cubes: 65_536,
+            max_live_cubes: 4_194_304,
             max_split_variable: u32::MAX,
         }
     }
@@ -117,7 +120,7 @@ pub struct SwarmStats {
     pub cubes_started: usize,
     pub cubes_unsat: usize,
     pub cubes_cancelled: usize,
-    // Cubos que un prefiltro refutó antes de llegar a ningún worker.
+    // Cubos refutados por el filtro, incluidos los padres cedidos por CPU.
     pub cubes_filtered: usize,
     pub cubes_yielded: usize,
     pub cubes_split: usize,
@@ -1972,9 +1975,9 @@ fn recube_worker(
     }
 }
 
-// A malformed callback response closes no cube, matching the static path.
+// Cada callback ve un lote acotado; una respuesta malformada conserva ese lote.
 fn recube_filter_jobs(
-    jobs: Vec<RecubeJob>,
+    mut jobs: Vec<RecubeJob>,
     variables: &[u32],
     filter: &mut Option<CubeFilter<'_>>,
     stats: &mut SwarmStats,
@@ -1982,29 +1985,43 @@ fn recube_filter_jobs(
 ) -> (Vec<RecubeJob>, Option<Vec<i32>>, usize) {
     let Some(callback) = filter.as_mut() else { return (jobs, None, 0); };
     let mut line = Vec::new();
-    let asked: Vec<Vec<i32>> = jobs.iter().map(|job| {
-        external(variables, &job.cube, &mut line);
-        line.clone()
-    }).collect();
-    let verdicts = (**callback)(&asked);
-    if verdicts.len() != jobs.len() { return (jobs, None, 0); }
-    let mut open = Vec::with_capacity(jobs.len());
-    let mut model = None;
+    let mut write = 0;
     let mut closed = 0;
-    for (job, verdict) in jobs.into_iter().zip(verdicts) {
-        match verdict {
-            CubeVerdict::Unknown => open.push(job),
-            CubeVerdict::Unsat => closed += 1,
-            CubeVerdict::Sat(found) => {
-                if model.is_none() { model = Some(found); }
+    let mut model = None;
+    for start in (0..jobs.len()).step_by(CUBE_FILTER_BATCH_CUBES) {
+        let end = start.saturating_add(CUBE_FILTER_BATCH_CUBES).min(jobs.len());
+        let asked: Vec<Vec<i32>> = jobs[start..end].iter().map(|job| {
+            external(variables, &job.cube, &mut line);
+            line.clone()
+        }).collect();
+        let verdicts = (**callback)(&asked);
+        if verdicts.len() != end - start {
+            // Retener todo el lote sin borrar refutaciones de lotes anteriores.
+            for read in start..end {
+                jobs.swap(write, read);
+                write += 1;
+            }
+            continue;
+        }
+        for (read, verdict) in (start..end).zip(verdicts) {
+            match verdict {
+                CubeVerdict::Unknown => {
+                    // Compactar sobre el vector original: no duplicar millones de jobs.
+                    jobs.swap(write, read);
+                    write += 1;
+                }
+                CubeVerdict::Unsat => closed += 1,
+                CubeVerdict::Sat(found) => { model = Some(found); break; }
             }
         }
+        if model.is_some() { break; }
     }
+    jobs.truncate(write);
     stats.cubes_filtered += closed;
     if let Some(progress) = progress {
         progress.cubes_filtered.store(stats.cubes_filtered as u64, Ordering::Relaxed);
     }
-    (open, model, closed)
+    (jobs, model, closed)
 }
 
 struct RecubeFrontier {
@@ -2069,7 +2086,7 @@ impl RecubeFrontier {
                     cancel.store(true, Ordering::Release);
                 }
             }
-            RecubeEvent::Finished { owner, mut job, first_start, outcome, total, split } => {
+            RecubeEvent::Finished { owner, job, first_start, outcome, total, mut split } => {
                 assert!(self.busy[owner], "A recubing report must own an in-flight job");
                 self.busy[owner] = false;
                 stats.cubes_started += usize::from(first_start);
@@ -2090,14 +2107,17 @@ impl RecubeFrontier {
                             progress.cubes_yielded.fetch_add(1, Ordering::Relaxed);
                         }
                         if !cancel.load(Ordering::Acquire) {
-                            let count = 1usize << split.len();
-                            let expanded = self.outstanding.checked_add(count - 1);
-                            if split.is_empty() || expanded.is_none_or(|live| live > self.limit) {
-                                // Keep the leaf unresolved and remove its next search budget.
-                                job.conflict_limit = 0;
-                                self.ready.push_front(job);
+                            // Reducir el split, sin omitir ninguna combinación de sus variables.
+                            let room = self.limit.saturating_sub(self.outstanding);
+                            while !split.is_empty() && (1usize << split.len()) - 1 > room {
+                                split.pop();
+                            }
+                            if split.is_empty() {
+                                // FIFO: conservar presupuesto y metadatos; volver a filtrar el padre.
+                                self.filter_pending.push_back(job);
                             } else {
-                                self.outstanding = expanded.expect("Checked live cube count");
+                                let count = 1usize << split.len();
+                                self.outstanding += count - 1;
                                 stats.cubes_generated = stats.cubes_generated.checked_add(count)
                                     .expect("Generated cube count overflow");
                                 stats.cubes_split += 1;
@@ -2233,7 +2253,7 @@ pub fn solve_swarm_with_recubing(
                 }
                 for owner in 0..senders.len() { frontier.dispatch(owner, &senders, &cancel); }
                 if !cancel.load(Ordering::Acquire) && !frontier.filter_pending.is_empty() {
-                    let count = frontier.filter_pending.len().min(1024);
+                    let count = frontier.filter_pending.len().min(CUBE_FILTER_BATCH_CUBES);
                     let batch = frontier.filter_pending.drain(..count).collect();
                     let (open, model, closed) = recube_filter_jobs(
                         batch, &variables, &mut filter, &mut stats, progress,
@@ -2449,5 +2469,325 @@ mod deterministic_import_tests {
         assert!(formula.iter().all(|clause| clause.iter().any(|literal| model.contains(literal))));
         assert_eq!((stats.decisions, stats.conflicts, stats.reignitions), (0, 0, 1));
         assert!(stats.reignition_flips <= 8 * 30);
+    }
+}
+
+#[cfg(test)]
+mod recube_frontier_fix_tests {
+    use super::*;
+
+    fn metadata_job(index: usize) -> RecubeJob {
+        RecubeJob { cube: Vec::new(), conflict_limit: index + 1, started: index & 1 != 0 }
+    }
+
+    fn assert_metadata(job: &RecubeJob, index: usize) {
+        assert_eq!(job.conflict_limit, index + 1);
+        assert_eq!(job.started, index & 1 != 0);
+    }
+
+    fn mock_frontier(outstanding: usize, limit: usize) -> RecubeFrontier {
+        RecubeFrontier {
+            ready: VecDeque::new(), filter_pending: VecDeque::new(), outstanding, limit,
+            busy: vec![true], stopped: vec![false], winner: None, failed_owner: None,
+        }
+    }
+
+    fn finish(
+        frontier: &mut RecubeFrontier,
+        job: RecubeJob,
+        first_start: bool,
+        outcome: SearchOutcome,
+        conflicts: usize,
+        split: Vec<u32>,
+        stats: &mut SwarmStats,
+        progress: &SwarmProgress,
+        recube: &RecubeConfig,
+        cancel: &AtomicBool,
+    ) {
+        frontier.busy[0] = true;
+        frontier.record(RecubeEvent::Finished {
+            owner: 0, job, first_start, outcome,
+            total: SolveStats { conflicts, ..SolveStats::default() }, split,
+        }, stats, Some(progress), recube, cancel, &[]);
+    }
+
+    #[test]
+    fn callback_batch_bound_preserves_literal_order_and_job_metadata() {
+        for count in [CUBE_FILTER_BATCH_CUBES, CUBE_FILTER_BATCH_CUBES + 1] {
+            let variables: Vec<u32> = (1..=count as u32).collect();
+            let jobs: Vec<RecubeJob> = (0..count).map(|index| RecubeJob {
+                cube: vec![((index as u32) << 1) | (index & 1) as u32],
+                ..metadata_job(index)
+            }).collect();
+            let mut sizes = Vec::new();
+            let mut seen = 0usize;
+            let mut callback = |asked: &[Vec<i32>]| {
+                assert!(asked.len() <= CUBE_FILTER_BATCH_CUBES);
+                sizes.push(asked.len());
+                for cube in asked {
+                    let id = (seen + 1) as i32;
+                    assert_eq!(cube.as_slice(), &[if seen & 1 == 0 { id } else { -id }]);
+                    seen += 1;
+                }
+                vec![CubeVerdict::Unknown; asked.len()]
+            };
+            let mut filter: Option<CubeFilter<'_>> = Some(&mut callback);
+            let mut stats = SwarmStats::default();
+            let progress = SwarmProgress::default();
+            let (open, model, closed) = recube_filter_jobs(
+                jobs, &variables, &mut filter, &mut stats, Some(&progress),
+            );
+            drop(filter);
+            assert_eq!(seen, count);
+            assert_eq!(sizes, if count == CUBE_FILTER_BATCH_CUBES {
+                vec![CUBE_FILTER_BATCH_CUBES]
+            } else { vec![CUBE_FILTER_BATCH_CUBES, 1] });
+            assert!(model.is_none());
+            assert_eq!(closed, 0);
+            assert_eq!(open.len(), count);
+            for (index, job) in open.iter().enumerate() {
+                assert_metadata(job, index);
+                assert_eq!(job.cube.as_slice(), &[((index as u32) << 1) | (index & 1) as u32]);
+            }
+            assert_eq!(stats.cubes_filtered, 0);
+            assert_eq!(progress.cubes_filtered.load(Ordering::Relaxed), 0);
+        }
+    }
+
+    #[test]
+    fn malformed_later_chunk_retains_every_job_without_losing_previous_refutations() {
+        for too_long in [false, true] {
+            let count = CUBE_FILTER_BATCH_CUBES + 3;
+            let jobs = (0..count).map(metadata_job).collect();
+            let mut calls = 0;
+            let mut callback = |asked: &[Vec<i32>]| {
+                calls += 1;
+                if calls == 1 {
+                    assert_eq!(asked.len(), CUBE_FILTER_BATCH_CUBES);
+                    let mut verdicts = vec![CubeVerdict::Unsat; asked.len()];
+                    for index in [0, 13, CUBE_FILTER_BATCH_CUBES - 1] {
+                        verdicts[index] = CubeVerdict::Unknown;
+                    }
+                    verdicts
+                } else {
+                    assert_eq!(asked.len(), 3);
+                    vec![CubeVerdict::Unsat; if too_long { 4 } else { 2 }]
+                }
+            };
+            let mut filter: Option<CubeFilter<'_>> = Some(&mut callback);
+            let mut stats = SwarmStats { cubes_filtered: 5, ..SwarmStats::default() };
+            let progress = SwarmProgress::default();
+            let (open, model, closed) = recube_filter_jobs(
+                jobs, &[], &mut filter, &mut stats, Some(&progress),
+            );
+            drop(filter);
+            assert_eq!(calls, 2);
+            assert!(model.is_none());
+            assert_eq!(closed, CUBE_FILTER_BATCH_CUBES - 3);
+            let expected = [0, 13, CUBE_FILTER_BATCH_CUBES - 1,
+                CUBE_FILTER_BATCH_CUBES, CUBE_FILTER_BATCH_CUBES + 1, CUBE_FILTER_BATCH_CUBES + 2];
+            assert_eq!(open.len(), expected.len());
+            for (job, index) in open.iter().zip(expected) { assert_metadata(job, index); }
+            assert_eq!(stats.cubes_filtered, 5 + closed);
+            assert_eq!(progress.cubes_filtered.load(Ordering::Relaxed), (5 + closed) as u64);
+        }
+    }
+
+    #[test]
+    fn an_empty_sat_model_stops_callbacks_before_unvisited_batches() {
+        let count = 3 * CUBE_FILTER_BATCH_CUBES + 1;
+        let jobs = (0..count).map(metadata_job).collect();
+        let mut calls = 0;
+        let mut callback = |asked: &[Vec<i32>]| {
+            calls += 1;
+            assert_eq!(asked.len(), CUBE_FILTER_BATCH_CUBES);
+            if calls == 1 {
+                vec![CubeVerdict::Unsat; asked.len()]
+            } else {
+                assert_eq!(calls, 2, "SAT must stop future callback batches");
+                let mut verdicts = vec![CubeVerdict::Unknown; asked.len()];
+                verdicts[1] = CubeVerdict::Unsat;
+                verdicts[2] = CubeVerdict::Sat(Vec::new());
+                verdicts
+            }
+        };
+        let mut filter: Option<CubeFilter<'_>> = Some(&mut callback);
+        let mut stats = SwarmStats::default();
+        let progress = SwarmProgress::default();
+        let (open, model, closed) = recube_filter_jobs(
+            jobs, &[], &mut filter, &mut stats, Some(&progress),
+        );
+        drop(filter);
+        assert_eq!(calls, 2);
+        assert_eq!(model, Some(Vec::new()));
+        assert_eq!(closed, CUBE_FILTER_BATCH_CUBES + 1);
+        assert_eq!(open.len(), 1);
+        assert_metadata(&open[0], CUBE_FILTER_BATCH_CUBES);
+        assert_eq!(stats.cubes_filtered, closed);
+        assert_eq!(progress.cubes_filtered.load(Ordering::Relaxed), closed as u64);
+    }
+
+    #[test]
+    fn a_full_frontier_filters_the_parent_again_at_the_fifo_tail_with_its_budget() {
+        let recube = RecubeConfig::default();
+        let cancel = AtomicBool::new(false);
+        let progress = SwarmProgress::default();
+        progress.cubes_total.store(4, Ordering::Relaxed);
+        let mut stats = SwarmStats { cubes_generated: 4, ..SwarmStats::default() };
+        let mut frontier = mock_frontier(4, 4);
+        frontier.ready.push_back(RecubeJob { cube: vec![2], ..metadata_job(1) });
+        frontier.ready.push_back(RecubeJob { cube: vec![4], ..metadata_job(2) });
+        frontier.filter_pending.push_back(RecubeJob { cube: vec![6], ..metadata_job(3) });
+        let parent = RecubeJob { cube: vec![0], conflict_limit: recube.max_conflicts_per_cube, started: true };
+        finish(&mut frontier, parent, true, SearchOutcome::Yielded, 7, vec![8, 10, 12],
+            &mut stats, &progress, &recube, &cancel);
+        assert_eq!(frontier.outstanding, 4);
+        assert_eq!(frontier.ready.iter().map(|job| job.cube.as_slice()).collect::<Vec<_>>(),
+            vec![&[2][..], &[4][..]]);
+        assert_eq!(frontier.filter_pending.len(), 2);
+        assert_eq!(frontier.filter_pending[0].cube.as_slice(), &[6]);
+        let retried = &frontier.filter_pending[1];
+        assert_eq!(retried.cube.as_slice(), &[0]);
+        assert_eq!(retried.conflict_limit, recube.max_conflicts_per_cube);
+        assert!(retried.started);
+        assert_eq!(stats.cubes_generated, 4);
+        assert_eq!(stats.cubes_started, 1);
+        assert_eq!(stats.cubes_yielded, 1);
+        assert_eq!(stats.cubes_split, 0);
+        assert_eq!(stats.total.conflicts, 7);
+        assert_eq!(progress.cubes_total.load(Ordering::Relaxed), 4);
+        assert_eq!(progress.cubes_yielded.load(Ordering::Relaxed), 1);
+        assert_eq!(progress.cubes_split.load(Ordering::Relaxed), 0);
+        assert!(!cancel.load(Ordering::Acquire));
+    }
+
+    #[test]
+    fn limited_room_reduces_split_depth_but_keeps_every_sign_combination() {
+        let recube = RecubeConfig::default();
+        let preferred: Vec<u32> = (2..12).map(|variable| (variable << 1) | (variable & 1)).collect();
+        for room in [1usize, 2, 3, 6, 7, 15, 31, 1023] {
+            let cancel = AtomicBool::new(false);
+            let progress = SwarmProgress::default();
+            progress.cubes_total.store(5, Ordering::Relaxed);
+            let mut stats = SwarmStats { cubes_generated: 5, ..SwarmStats::default() };
+            let mut frontier = mock_frontier(5, 5 + room);
+            let parent = RecubeJob { cube: vec![0, 3], conflict_limit: recube.max_conflicts_per_cube, started: true };
+            finish(&mut frontier, parent, true, SearchOutcome::Yielded, 11, preferred.clone(),
+                &mut stats, &progress, &recube, &cancel);
+            let mut depth = 0;
+            while depth < 10 && (1usize << (depth + 1)) - 1 <= room { depth += 1; }
+            let children = 1usize << depth;
+            assert_eq!(frontier.filter_pending.len(), children);
+            let mut seen = vec![false; children];
+            for job in &frontier.filter_pending {
+                assert_eq!(job.cube.len(), 2 + depth);
+                assert_eq!(&job.cube[..2], &[0, 3]);
+                assert_eq!(job.conflict_limit, recube.max_conflicts_per_cube);
+                assert!(!job.started);
+                let mut mask = 0;
+                for (bit, &literal) in job.cube[2..].iter().enumerate() {
+                    assert_eq!(literal >> 1, preferred[bit] >> 1);
+                    mask |= ((literal ^ preferred[bit]) as usize) << bit;
+                }
+                assert!(!seen[mask], "A sign combination must occur exactly once");
+                seen[mask] = true;
+            }
+            assert!(seen.into_iter().all(|present| present));
+            assert_eq!(frontier.outstanding, 5 + children - 1);
+            assert!(frontier.outstanding <= frontier.limit);
+            assert_eq!(stats.cubes_generated, 5 + children);
+            assert_eq!(stats.cubes_split, 1);
+            assert_eq!(stats.cubes_yielded, 1);
+            assert_eq!(progress.cubes_total.load(Ordering::Relaxed), (5 + children - 1) as u64);
+            assert_eq!(progress.cubes_split.load(Ordering::Relaxed), 1);
+            assert!(!cancel.load(Ordering::Acquire));
+        }
+    }
+
+    #[test]
+    fn retried_parent_can_close_in_cpu_or_filter_without_double_counting_its_start() {
+        for close_in_filter in [false, true] {
+            let recube = RecubeConfig::default();
+            let cancel = AtomicBool::new(false);
+            let progress = SwarmProgress::default();
+            let mut stats = SwarmStats { cubes_generated: 2, ..SwarmStats::default() };
+            let mut frontier = mock_frontier(2, 2);
+            frontier.ready.push_back(RecubeJob { cube: vec![2], conflict_limit: 50_000, started: false });
+            let parent = RecubeJob { cube: vec![0], conflict_limit: 50_000, started: true };
+            finish(&mut frontier, parent, true, SearchOutcome::Yielded, 50_000, vec![4, 6],
+                &mut stats, &progress, &recube, &cancel);
+            let retry = frontier.filter_pending.pop_front().unwrap();
+            let mut no_filter: Option<CubeFilter<'_>> = None;
+            let (open, model, closed) = recube_filter_jobs(
+                vec![retry], &[11, 12], &mut no_filter, &mut stats, Some(&progress),
+            );
+            assert!(model.is_none());
+            assert_eq!(closed, 0);
+            frontier.ready.extend(open);
+            let other = frontier.ready.pop_front().unwrap();
+            assert_eq!(other.cube.as_slice(), &[2]);
+            finish(&mut frontier, other, true, SearchOutcome::Unsat, 3, Vec::new(),
+                &mut stats, &progress, &recube, &cancel);
+            let retry = frontier.ready.pop_front().unwrap();
+            assert_eq!(retry.cube.as_slice(), &[0]);
+            assert!(retry.started);
+            assert_eq!(retry.conflict_limit, 50_000);
+            if close_in_filter {
+                let mut callback = |asked: &[Vec<i32>]| {
+                    assert_eq!(asked, &[vec![11]]);
+                    vec![CubeVerdict::Unsat]
+                };
+                let mut filter: Option<CubeFilter<'_>> = Some(&mut callback);
+                let (open, model, closed) = recube_filter_jobs(
+                    vec![retry], &[11, 12], &mut filter, &mut stats, Some(&progress),
+                );
+                assert!(open.is_empty() && model.is_none());
+                assert_eq!(closed, 1);
+                frontier.outstanding -= closed;
+            } else {
+                finish(&mut frontier, retry, false, SearchOutcome::Unsat, 2, Vec::new(),
+                    &mut stats, &progress, &recube, &cancel);
+            }
+            assert_eq!(frontier.outstanding, 0);
+            assert!(frontier.ready.is_empty() && frontier.filter_pending.is_empty());
+            assert_eq!(stats.cubes_started, 2);
+            assert_eq!(stats.cubes_yielded, 1);
+            assert_eq!(stats.cubes_split, 0);
+            assert_eq!(stats.cubes_filtered, usize::from(close_in_filter));
+            assert_eq!(stats.cubes_unsat, if close_in_filter { 1 } else { 2 });
+            assert_eq!(stats.total.conflicts, if close_in_filter { 50_003 } else { 50_005 });
+            assert_eq!(stats.cubes_unsat + stats.cubes_filtered + stats.cubes_split, stats.cubes_generated);
+            assert!(!cancel.load(Ordering::Acquire));
+        }
+    }
+
+    #[test]
+    fn a_four_million_job_frontier_keeps_callback_allocations_at_the_batch_bound() {
+        let count = 4_194_304usize;
+        let jobs = (0..count).map(metadata_job).collect();
+        let mut calls = 0usize;
+        let mut observed = 0usize;
+        let mut callback = |asked: &[Vec<i32>]| {
+            assert!(!asked.is_empty());
+            assert!(asked.len() <= CUBE_FILTER_BATCH_CUBES);
+            assert!(asked.iter().all(Vec::is_empty));
+            calls += 1;
+            observed += asked.len();
+            vec![CubeVerdict::Unknown; asked.len()]
+        };
+        let mut filter: Option<CubeFilter<'_>> = Some(&mut callback);
+        let mut stats = SwarmStats::default();
+        let (open, model, closed) = recube_filter_jobs(jobs, &[], &mut filter, &mut stats, None);
+        drop(filter);
+        assert_eq!(calls, count.div_ceil(CUBE_FILTER_BATCH_CUBES));
+        assert_eq!(observed, count);
+        assert!(model.is_none());
+        assert_eq!(closed, 0);
+        assert_eq!(open.len(), count);
+        for (index, job) in open.iter().enumerate() {
+            assert!(job.cube.is_empty());
+            assert_metadata(job, index);
+        }
+        assert_eq!(stats.cubes_filtered, 0);
     }
 }
