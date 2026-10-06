@@ -5,7 +5,7 @@
 #[path = "../src/hybrid.rs"]
 mod hybrid;
 
-use hybrid::parity::reduce_parity;
+use hybrid::parity::{reduce_parity, xor_equations};
 use hybrid::{solve_hybrid, verify_model, HybridConfig};
 use std::collections::BTreeSet;
 
@@ -261,4 +261,23 @@ fn formulas_without_parity_are_left_alone() {
     let reduction = reduce_parity(&[vec![1], vec![-2], vec![3, 4]]);
     assert_eq!(reduction.equations, 2);
     assert!(reduction.clauses.is_empty());
+}
+
+#[test]
+fn the_extractor_reports_the_equations_over_the_original_identifiers() {
+    // Two equations over sparse identifiers, a unit and an ordinary clause.
+    let mut formula = vec![vec![7, 900, 13]];
+    xor_clauses(&[900, 7, 4000], true, &mut formula);
+    xor_clauses(&[13, 7], false, &mut formula);
+    formula.push(vec![-52]);
+    let mut equations = xor_equations(&formula);
+    equations.sort();
+    assert_eq!(equations, vec![(vec![7, 13], false), (vec![7, 900, 4000], true), (vec![52], false)]);
+    // The same ones the reduction counts, and asking does not disturb it.
+    assert_eq!(reduce_parity(&formula).equations, 3);
+    // Three of the four clauses are not an equation, and an empty clause voids everything.
+    let partial = vec![vec![1, 2, 3], vec![-1, -2, 3], vec![-1, 2, -3]];
+    assert!(xor_equations(&partial).is_empty());
+    formula.push(vec![]);
+    assert!(xor_equations(&formula).is_empty());
 }

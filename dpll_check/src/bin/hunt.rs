@@ -6,6 +6,8 @@
 //     --no-share          enjambre sin intercambio de clausulas
 //     --no-symmetry       sin ruptura de simetrias
 //     --no-parity         sin capa de paridad
+//     --use-gf2           carga las ecuaciones XOR de la formula en el nucleo matricial GF(2)
+//                         (gf2_engine.rs), las reduce e informa; la busqueda aun no lo usa
 //     --flips F           flips por variable del oraculo (16)
 //     --interval I        conflictos entre re-igniciones (500); 0 apaga el oraculo
 //     --seed S            semilla del oraculo
@@ -25,6 +27,10 @@
 #[allow(dead_code)]
 #[path = "../hybrid.rs"]
 mod hybrid;
+// Mejora 1: modulo aislado, fuera del motor. El lanzador solo decide si existe.
+#[allow(dead_code)]
+#[path = "../gf2_engine.rs"]
+mod gf2_engine;
 
 use hybrid::cdcl::SwarmConfig;
 use hybrid::proof::PbProof;
@@ -46,6 +52,7 @@ struct Options {
     share: bool,
     symmetry: bool,
     parity: bool,
+    use_gf2: bool,
     flips: usize,
     interval: usize,
     seed: Option<u64>,
@@ -62,7 +69,7 @@ fn parse_options(arguments: &[String]) -> Result<Options, String> {
     let defaults = HybridConfig::default();
     let mut options = Options {
         input: String::new(), workers: None, cubes: SwarmConfig::default().cubes_per_worker, share: true,
-        symmetry: true, parity: true, flips: defaults.oracle.flips_per_variable,
+        symmetry: true, parity: true, use_gf2: false, flips: defaults.oracle.flips_per_variable,
         interval: defaults.reignition_interval, seed: None, proof: None, cap: u64::MAX, model: None,
         preprocess_only: false, timeout: None, heartbeat: None, csv: None,
     };
@@ -82,6 +89,7 @@ fn parse_options(arguments: &[String]) -> Result<Options, String> {
             "--no-share" => options.share = false,
             "--no-symmetry" => options.symmetry = false,
             "--no-parity" => options.parity = false,
+            "--use-gf2" => options.use_gf2 = true,
             "--flips" => options.flips = number(value(flag)?)? as usize,
             "--interval" => options.interval = number(value(flag)?)? as usize,
             "--seed" => options.seed = Some(number(value(flag)?)?),
@@ -247,6 +255,33 @@ fn preprocess(
     Ok(0)
 }
 
+// Mejora 1: carga en el nucleo matricial las ecuaciones XOR que la formula contiene y hace
+// la eliminacion inicial. Apagado no extrae nada. Solo informa: la busqueda no lo usa aun.
+fn load_gf2(formula: &Formula, gf2: &mut gf2_engine::Gf2Propagator) -> gf2_engine::Gf2Outcome {
+    if !gf2.is_enabled() {
+        return gf2_engine::Gf2Outcome::Disabled;
+    }
+    for (variables, constant) in hybrid::parity::xor_equations(formula) {
+        gf2.add_xor(&variables, constant);
+    }
+    gf2.eliminate()
+}
+
+fn describe_gf2(gf2: &gf2_engine::Gf2Propagator, outcome: gf2_engine::Gf2Outcome) -> String {
+    use gf2_engine::Gf2Outcome;
+    if gf2.equations() == 0 {
+        return "la formula no contiene ecuaciones XOR".into();
+    }
+    let loaded = format!("{} ecuaciones XOR sobre {} variables", gf2.equations(), gf2.variables());
+    match outcome {
+        Gf2Outcome::Disabled => "apagado".into(),
+        Gf2Outcome::Contradiction => format!("{loaded}; CONTRADICCION en la raiz: el sistema lineal da 0 = 1"),
+        Gf2Outcome::Consistent { rank } => {
+            format!("{loaded}; rango {rank}, sin contradiccion, {} variables forzadas", gf2.units().len())
+        }
+    }
+}
+
 fn run(options: &Options) -> Result<i32, String> {
     let started = Instant::now();
     let text = std::fs::read_to_string(&options.input).map_err(|error| format!("{}: {error}", options.input))?;
@@ -274,6 +309,14 @@ fn run(options: &Options) -> Result<i32, String> {
         options.flips, options.interval, formula.len(),
     );
     eprintln!("c {}: {variables} variables, {} clausulas, modo {mode}", options.input, formula.len());
+    // Sin --use-gf2 el modulo no reserva nada, no se extrae ninguna ecuacion y el motor
+    // trabaja exactamente como antes.
+    let mut gf2 = gf2_engine::Gf2Propagator::new(options.use_gf2);
+    if gf2.is_enabled() {
+        let start = Instant::now();
+        let outcome = load_gf2(&formula, &mut gf2);
+        eprintln!("c gf2: {} ({:.1} ms)", describe_gf2(&gf2, outcome), start.elapsed().as_secs_f64() * 1000.0);
+    }
 
     // Vigilante: progreso y limite de tiempo, sin tocar el motor.
     let gauge = Arc::new(Gauge::default());
@@ -443,5 +486,57 @@ p cnf 3 3
         assert!(parse_options(&arguments).is_err());
         let options = parse_options(&arguments[..3]).unwrap();
         assert_eq!((options.workers, options.flips, options.interval), (Some(4), 16, 500));
+    }
+
+    #[test]
+    fn the_gf2_module_is_off_unless_asked_for() {
+        let arguments = |text: &str| -> Vec<String> { text.split_whitespace().map(str::to_owned).collect() };
+        assert!(!parse_options(&arguments("f.cnf")).unwrap().use_gf2);
+        assert!(parse_options(&arguments("f.cnf --use-gf2 --no-parity")).unwrap().use_gf2);
+        assert!(!gf2_engine::Gf2Propagator::new(false).is_enabled());
+        assert!(gf2_engine::Gf2Propagator::new(true).is_enabled());
+    }
+
+    // CNF de x1 ^ ... ^ xk = value: una clausula por patron de signos de paridad opuesta.
+    fn xor_clauses(variables: &[i32], value: bool, formula: &mut Formula) {
+        for pattern in 0..1_u32 << variables.len() {
+            if (pattern.count_ones() & 1 == 1) != value {
+                formula.push(variables.iter().enumerate()
+                    .map(|(bit, &variable)| if pattern >> bit & 1 == 1 { -variable } else { variable }).collect());
+            }
+        }
+    }
+
+    #[test]
+    fn the_matrix_is_fed_with_the_xors_of_the_formula() {
+        use gf2_engine::{Gf2Outcome, Gf2Propagator};
+        // Tseitin sobre K4 con carga impar: cuatro ecuaciones que suman 0 = 1.
+        let mut tseitin = Formula::new();
+        for (vertex, incident) in [[1, 2, 3], [1, 4, 5], [2, 4, 6], [3, 5, 6]].iter().enumerate() {
+            xor_clauses(incident, vertex == 0, &mut tseitin);
+        }
+        let mut gf2 = Gf2Propagator::new(true);
+        assert_eq!(load_gf2(&tseitin, &mut gf2), Gf2Outcome::Contradiction);
+        assert_eq!((gf2.equations(), gf2.variables(), gf2.rank()), (4, 6, 3));
+        assert!(describe_gf2(&gf2, Gf2Outcome::Contradiction).contains("CONTRADICCION"));
+
+        // x1 ^ x2 = 1 y x1 ^ x2 ^ x3 = 0 fuerzan x3; la clausula suelta no es una ecuacion.
+        let mut forced = vec![vec![4, 5, 6]];
+        xor_clauses(&[1, 2], true, &mut forced);
+        xor_clauses(&[1, 2, 3], false, &mut forced);
+        let mut gf2 = Gf2Propagator::new(true);
+        let outcome = load_gf2(&forced, &mut gf2);
+        assert_eq!(outcome, Gf2Outcome::Consistent { rank: 2 });
+        assert_eq!(gf2.units(), vec![(3, true)]);
+        assert_eq!(describe_gf2(&gf2, outcome), "2 ecuaciones XOR sobre 3 variables; rango 2, sin contradiccion, 1 variables forzadas");
+
+        // Sin XOR no hay nada que cargar, y apagado ni siquiera se mira la formula.
+        let plain = vec![vec![1, 2, 3], vec![-1, 2], vec![-2, 3, 4]];
+        let mut gf2 = Gf2Propagator::new(true);
+        assert_eq!(load_gf2(&plain, &mut gf2), Gf2Outcome::Consistent { rank: 0 });
+        assert!(describe_gf2(&gf2, Gf2Outcome::Consistent { rank: 0 }).contains("no contiene"));
+        let mut off = Gf2Propagator::new(false);
+        assert_eq!(load_gf2(&tseitin, &mut off), Gf2Outcome::Disabled);
+        assert_eq!(off.equations(), 0);
     }
 }

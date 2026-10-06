@@ -448,6 +448,21 @@ impl Prover<'_> {
     }
 }
 
+// Las ecuaciones XOR que la fórmula contiene, sobre sus identificadores originales: las
+// mismas que reduce esta capa, sin reducir ni inyectar nada. Es la puerta para que otro
+// módulo haga su propia álgebra sobre ellas.
+pub fn xor_equations(formula: &[Clause]) -> Vec<(Vec<u32>, bool)> {
+    if formula.iter().any(Vec::is_empty) {
+        return Vec::new();
+    }
+    let mut ids: Vec<u32> = formula.iter().flatten().map(|literal| literal.unsigned_abs()).collect();
+    ids.sort_unstable();
+    ids.dedup();
+    extract(&ids, formula).into_iter().map(|(variables, constant)| {
+        (variables.into_iter().map(|index| ids[index as usize]).collect(), constant)
+    }).collect()
+}
+
 pub fn reduce_parity(formula: &[Clause]) -> ParityReduction {
     reduce_parity_with_proof(formula, None)
 }
