@@ -6,6 +6,9 @@
 //     --no-share          enjambre sin intercambio de clausulas
 //     --no-symmetry       sin ruptura de simetrias
 //     --no-parity         sin capa de paridad
+//     --ramsey-symm N     la formula es de Ramsey sobre K_N (gen_ramsey): se comprueba que es
+//                         simetrica en los vertices y se le anaden las clausulas que los
+//                         ordenan (ramsey_symmetry.rs). No admite --proof
 //     --flips F           flips por variable del oraculo (16)
 //     --interval I        conflictos entre re-igniciones (500); 0 apaga el oraculo
 //     --seed S            semilla del oraculo
@@ -25,6 +28,13 @@
 #[allow(dead_code)]
 #[path = "../hybrid.rs"]
 mod hybrid;
+// Mejora 2: ruptura de simetrias conocidas, fuera del motor. Solo cambia la formula que
+// se le entrega, y solo si se pide.
+#[allow(dead_code)]
+#[path = "../symmetry_breaker.rs"]
+mod symmetry_breaker;
+#[path = "../ramsey_symmetry.rs"]
+mod ramsey_symmetry;
 
 use hybrid::cdcl::SwarmConfig;
 use hybrid::proof::PbProof;
@@ -46,6 +56,7 @@ struct Options {
     share: bool,
     symmetry: bool,
     parity: bool,
+    ramsey_symm: Option<u32>,
     flips: usize,
     interval: usize,
     seed: Option<u64>,
@@ -62,7 +73,7 @@ fn parse_options(arguments: &[String]) -> Result<Options, String> {
     let defaults = HybridConfig::default();
     let mut options = Options {
         input: String::new(), workers: None, cubes: SwarmConfig::default().cubes_per_worker, share: true,
-        symmetry: true, parity: true, flips: defaults.oracle.flips_per_variable,
+        symmetry: true, parity: true, ramsey_symm: None, flips: defaults.oracle.flips_per_variable,
         interval: defaults.reignition_interval, seed: None, proof: None, cap: u64::MAX, model: None,
         preprocess_only: false, timeout: None, heartbeat: None, csv: None,
     };
@@ -82,6 +93,9 @@ fn parse_options(arguments: &[String]) -> Result<Options, String> {
             "--no-share" => options.share = false,
             "--no-symmetry" => options.symmetry = false,
             "--no-parity" => options.parity = false,
+            "--ramsey-symm" => {
+                options.ramsey_symm = Some(u32::try_from(number(value(flag)?)?).map_err(|_| "Demasiados vertices")?);
+            }
             "--flips" => options.flips = number(value(flag)?)? as usize,
             "--interval" => options.interval = number(value(flag)?)? as usize,
             "--seed" => options.seed = Some(number(value(flag)?)?),
@@ -102,6 +116,9 @@ fn parse_options(arguments: &[String]) -> Result<Options, String> {
     }
     if options.proof.is_some() && options.workers.is_some() {
         return Err("El enjambre no emite traza: --proof exige ejecutar en serie, sin --workers".into());
+    }
+    if options.proof.is_some() && options.ramsey_symm.is_some() {
+        return Err("--ramsey-symm no admite --proof: la traza hablaria de una formula que no es la del fichero".into());
     }
     Ok(options)
 }
@@ -250,10 +267,29 @@ fn preprocess(
 fn run(options: &Options) -> Result<i32, String> {
     let started = Instant::now();
     let text = std::fs::read_to_string(&options.input).map_err(|error| format!("{}: {error}", options.input))?;
-    let formula = parse_dimacs(&text)?;
+    let mut formula = parse_dimacs(&text)?;
     drop(text);
     let parse_ms = started.elapsed().as_secs_f64() * 1000.0;
-    let variables = formula.iter().flatten().map(|literal| literal.unsigned_abs()).max().unwrap_or(0);
+    let mut variables = formula.iter().flatten().map(|literal| literal.unsigned_abs()).max().unwrap_or(0);
+    // Sin --ramsey-symm la formula llega al motor tal como esta en el fichero.
+    if let Some(vertices) = options.ramsey_symm {
+        let start = Instant::now();
+        if ramsey_symmetry::edge_count(vertices) != Some(variables) {
+            return Err(format!("--ramsey-symm {vertices}: la formula tiene {variables} variables, no las de K_{vertices}"));
+        }
+        if !ramsey_symmetry::is_vertex_symmetric(vertices, &formula) {
+            return Err(format!("--ramsey-symm {vertices}: la formula no es simetrica en los vertices; no se anade nada"));
+        }
+        let mut breaker = symmetry_breaker::SymmetryBreaker::new(variables + 1);
+        let before = formula.len();
+        ramsey_symmetry::inject_ramsey_symmetries(vertices, &mut breaker, &mut formula);
+        // El motor tiene que ver tambien las auxiliares: el limite de variables crece.
+        variables = breaker.next_free() - 1;
+        eprintln!(
+            "c symm: K_{vertices} simetrica en los vertices; {} clausulas y {} variables auxiliares anadidas ({:.1} ms)",
+            formula.len() - before, breaker.auxiliaries(), start.elapsed().as_secs_f64() * 1000.0,
+        );
+    }
     let mut config = HybridConfig { symmetry: options.symmetry, parity: options.parity, ..HybridConfig::default() };
     config.oracle.flips_per_variable = options.flips;
     config.reignition_interval = options.interval;
@@ -443,5 +479,16 @@ p cnf 3 3
         assert!(parse_options(&arguments).is_err());
         let options = parse_options(&arguments[..3]).unwrap();
         assert_eq!((options.workers, options.flips, options.interval), (Some(4), 16, 500));
+    }
+
+    #[test]
+    fn ramsey_symmetry_breaking_is_off_unless_asked_for() {
+        let arguments = |text: &str| -> Vec<String> { text.split_whitespace().map(str::to_owned).collect() };
+        assert_eq!(parse_options(&arguments("f.cnf")).unwrap().ramsey_symm, None);
+        let options = parse_options(&arguments("f.cnf --ramsey-symm 43 --workers 2")).unwrap();
+        assert_eq!(options.ramsey_symm, Some(43));
+        assert!(options.symmetry);
+        assert!(parse_options(&arguments("f.cnf --ramsey-symm")).is_err());
+        assert!(parse_options(&arguments("f.cnf --ramsey-symm 18 --proof p.pbp")).is_err());
     }
 }
