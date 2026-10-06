@@ -7,6 +7,14 @@ default-run = "dpll_check"
 [dependencies]
 # Puente de I/O en RAM para las trazas: anillo SPSC y sink zstd.
 chronos-vfs = { path = "Chronos-VFS" }
+# Mejora 3: CUDA nativo para la fase "conquer". Opcional: sin `--features gpu` no se
+# compila y el binario es el de CPU de siempre. Solo el driver, cargado en tiempo de
+# ejecucion (nvcuda, que instala el controlador de la tarjeta); la version de las cabeceras
+# se fija a la del toolkit que tiene `nvcc` en el PATH para no depender de el al compilar.
+cudarc = { version = "0.19.10", optional = true, default-features = false, features = ["std", "driver", "dynamic-loading", "cuda-12060"] }
+
+[features]
+gpu = ["dep:cudarc"]
 
 [profile.release]
 debug = false

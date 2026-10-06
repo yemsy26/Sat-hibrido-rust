@@ -19,6 +19,9 @@
 //     --timeout S         aborta a los S segundos (estado TIMEOUT, codigo 124)
 //     --heartbeat S       linea de progreso en stderr cada S segundos
 //     --csv ETIQUETA      una fila CSV en la salida estandar (`hunt --header` da la cabecera)
+//     --use-gpu           abre la GPU CUDA y reserva sus buffers para cube and conquer
+//                         (gpu_dispatcher.rs); pide compilar con `--features gpu`. En esta
+//                         fase la busqueda sigue entera en CPU
 //
 // El motor no tiene puntos de control. En serie, el unico progreso observable desde fuera
 // es el crecimiento de la traza. El enjambre publica sus conflictos y cubos cerrados: con
@@ -36,6 +39,10 @@ mod hybrid;
 mod symmetry_breaker;
 #[path = "../ramsey_symmetry.rs"]
 mod ramsey_symmetry;
+// Mejora 3: puente con la GPU, fuera del motor. Solo se usa si se pide.
+#[allow(dead_code)]
+#[path = "../gpu_dispatcher.rs"]
+mod gpu_dispatcher;
 
 use hybrid::cdcl::{SwarmConfig, SwarmProgress};
 use hybrid::proof::PbProof;
@@ -70,6 +77,7 @@ struct Options {
     timeout: Option<u64>,
     heartbeat: Option<u64>,
     csv: Option<String>,
+    use_gpu: bool,
 }
 
 fn parse_options(arguments: &[String]) -> Result<Options, String> {
@@ -78,7 +86,7 @@ fn parse_options(arguments: &[String]) -> Result<Options, String> {
         input: String::new(), workers: None, cubes: SwarmConfig::default().cubes_per_worker, share: true,
         symmetry: true, parity: true, ramsey_symm: None, flips: defaults.oracle.flips_per_variable,
         interval: defaults.reignition_interval, seed: None, proof: None, cap: u64::MAX, model: None,
-        preprocess_only: false, timeout: None, heartbeat: None, csv: None,
+        preprocess_only: false, timeout: None, heartbeat: None, csv: None, use_gpu: false,
     };
     let mut index = 0;
     while index < arguments.len() {
@@ -109,6 +117,7 @@ fn parse_options(arguments: &[String]) -> Result<Options, String> {
             "--timeout" => options.timeout = Some(number(value(flag)?)?),
             "--heartbeat" => options.heartbeat = Some(number(value(flag)?)?.max(1)),
             "--csv" => options.csv = Some(value(flag)?),
+            "--use-gpu" => options.use_gpu = true,
             _ if flag.starts_with("--") => return Err(format!("Opcion desconocida: {flag}")),
             _ if options.input.is_empty() => options.input = flag.to_owned(),
             _ => return Err(format!("Sobra el argumento {flag}")),
@@ -277,6 +286,37 @@ fn preprocess(
     Ok(0)
 }
 
+// Lotes que la CPU enviara a la GPU: cubos por lote y literales por cubo como mucho.
+const GPU_BATCH_CUBES: usize = 1 << 16;
+const GPU_CUBE_DEPTH: usize = 32;
+
+// Abre la tarjeta, reserva sus buffers a la medida de la formula y la deja subida. Lo que
+// encuentra lo cuenta por stderr; la busqueda no se entera de que existe.
+fn open_gpu(formula: &Formula) -> Result<gpu_dispatcher::GpuConqueror, String> {
+    let failed = |error: gpu_dispatcher::GpuError| format!("--use-gpu: {error}");
+    let mib = |bytes: u64| bytes as f64 / (1 << 20) as f64;
+    let start = Instant::now();
+    let plan = gpu_dispatcher::BufferPlan::for_formula(formula, GPU_BATCH_CUBES, GPU_CUBE_DEPTH);
+    let mut conqueror = gpu_dispatcher::GpuConqueror::new(plan).map_err(failed)?;
+    let info = conqueror.info();
+    eprintln!(
+        "c gpu: {} (dispositivo {}, capacidad de computo {}.{}); VRAM {:.0} MiB libres de {:.0} MiB",
+        info.name, info.ordinal, info.compute_capability.0, info.compute_capability.1,
+        mib(info.free_bytes), mib(info.total_bytes),
+    );
+    conqueror.load_formula(formula).map_err(failed)?;
+    if !conqueror.verify_formula().map_err(failed)? {
+        return Err("--use-gpu: la formula releida de VRAM no coincide con la enviada".into());
+    }
+    eprintln!(
+        "c gpu: {:.1} MiB reservados; formula subida y releida sin diferencias ({} clausulas, {} literales); lotes de hasta {} cubos de {} literales; quedan {:.0} MiB libres ({:.1} ms)",
+        mib(plan.bytes()), plan.clauses, plan.literals, plan.cubes, GPU_CUBE_DEPTH,
+        mib(conqueror.free_bytes().map_err(failed)?), start.elapsed().as_secs_f64() * 1000.0,
+    );
+    eprintln!("c gpu: modo Cube and Conquer preparado. En esta fase ningun cubo se resuelve en la GPU: la busqueda sigue en CPU");
+    Ok(conqueror)
+}
+
 fn run(options: &Options) -> Result<i32, String> {
     let started = Instant::now();
     let text = std::fs::read_to_string(&options.input).map_err(|error| format!("{}: {error}", options.input))?;
@@ -303,6 +343,10 @@ fn run(options: &Options) -> Result<i32, String> {
             formula.len() - before, breaker.auxiliaries(), start.elapsed().as_secs_f64() * 1000.0,
         );
     }
+    // Sin --use-gpu no se toca la tarjeta ni se mira si existe. Con ella, el controlador
+    // vive lo que la ejecucion, pero la busqueda todavia no le envia nada. Recibe la
+    // formula tal como la vera el motor, con lo que --ramsey-symm le haya anadido.
+    let _conqueror = if options.use_gpu { Some(open_gpu(&formula)?) } else { None };
     let mut config = HybridConfig { symmetry: options.symmetry, parity: options.parity, ..HybridConfig::default() };
     config.oracle.flips_per_variable = options.flips;
     config.reignition_interval = options.interval;
@@ -503,6 +547,15 @@ p cnf 3 3
 ");
         assert!(gauge.truncated.load(Ordering::Relaxed));
         assert_eq!((gauge.bytes.load(Ordering::Relaxed), gauge.lines.load(Ordering::Relaxed)), (6, 1));
+    }
+
+    #[test]
+    fn the_gpu_is_only_opened_when_asked_for() {
+        let arguments = |text: &str| -> Vec<String> { text.split_whitespace().map(str::to_owned).collect() };
+        assert!(!parse_options(&arguments("f.cnf --workers 4")).unwrap().use_gpu);
+        let options = parse_options(&arguments("f.cnf --use-gpu --workers 4")).unwrap();
+        assert!(options.use_gpu);
+        assert_eq!(options.workers, Some(4));
     }
 
     #[test]
