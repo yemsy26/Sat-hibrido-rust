@@ -1591,14 +1591,14 @@ fn search(
     }
 }
 fn make_cubes(base: &State, config: SwarmConfig) -> Vec<Vec<u32>> {
-    let target = config.workers.max(1).saturating_mul(config.cubes_per_worker.max(1)).clamp(1, 1024);
+    let target = config.workers.max(1).saturating_mul(config.cubes_per_worker.max(1)).clamp(1, 65_536);
     let mut candidates: Vec<usize> = (0..base.levels.len())
         .filter(|&variable| base.values[variable << 1] == 0).collect();
     candidates.sort_unstable_by(|&a, &b| {
         base.scores[b].total_cmp(&base.scores[a]).then_with(|| a.cmp(&b))
     });
     let mut depth = 0;
-    while depth < candidates.len().min(10) && (1 << depth) < target { depth += 1; }
+    while depth < candidates.len().min(16) && (1 << depth) < target { depth += 1; }
     candidates.truncate(depth);
     // Todas las combinaciones: las fases ordenan los cubos y nunca descartan ninguno.
     (0..1usize << depth).map(|mask| candidates.iter().enumerate().map(|(index, &variable)| {
