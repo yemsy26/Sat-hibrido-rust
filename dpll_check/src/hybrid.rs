@@ -145,8 +145,19 @@ pub fn solve_hybrid_parallel(
 
 // El mismo recorrido, con un observador que puede leer el avance del enjambre mientras busca.
 pub fn solve_hybrid_parallel_with_progress(
-    formula: &[Clause], config: HybridConfig, mut swarm: cdcl::SwarmConfig,
+    formula: &[Clause], config: HybridConfig, swarm: cdcl::SwarmConfig,
     progress: Option<&cdcl::SwarmProgress>,
+) -> ParallelHybridReport {
+    solve_hybrid_parallel_with_filter(formula, config, swarm, progress, None)
+}
+
+// El mismo recorrido, con un prefiltro que ve los cubos del enjambre antes que los workers.
+// El filtro contesta sobre `formula`, la original: lo que refuta ahí queda refutado también
+// con las cláusulas que añaden las capas previas, y un modelo suyo se comprueba abajo como
+// cualquier otro.
+pub fn solve_hybrid_parallel_with_filter(
+    formula: &[Clause], config: HybridConfig, mut swarm: cdcl::SwarmConfig,
+    progress: Option<&cdcl::SwarmProgress>, filter: Option<cdcl::CubeFilter<'_>>,
 ) -> ParallelHybridReport {
     use std::time::Instant;
     swarm.reignition = cdcl::ReignitionConfig {
@@ -154,7 +165,7 @@ pub fn solve_hybrid_parallel_with_progress(
     };
     let (extended, symmetry, parity) = preprocess(formula, config, None);
     let start = Instant::now();
-    let (model, swarm) = cdcl::solve_swarm_with_progress(&extended, swarm, progress);
+    let (model, swarm) = cdcl::solve_swarm_with_filter(&extended, swarm, progress, filter);
     let conquer_ms = start.elapsed().as_secs_f64() * 1000.0;
     let model = restrict(model, formula, &parity);
     if let Some(model) = &model { assert!(verify_model(formula, model)); }

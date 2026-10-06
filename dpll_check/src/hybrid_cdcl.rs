@@ -99,6 +99,8 @@ pub struct SwarmStats {
     pub cubes_started: usize,
     pub cubes_unsat: usize,
     pub cubes_cancelled: usize,
+    // Cubos que un prefiltro refutó antes de llegar a ningún worker.
+    pub cubes_filtered: usize,
     pub total: SolveStats,
     // Snapshot auditable: IDs originales; nunca contiene cláusulas vacías.
     pub shared_clauses: Vec<Vec<i32>>,
@@ -111,8 +113,25 @@ pub struct SwarmStats {
 pub struct SwarmProgress {
     pub conflicts: AtomicU64,
     pub cubes_total: AtomicU64,
+    // Cubos cerrados por los workers; los del prefiltro se cuentan aparte.
     pub cubes_closed: AtomicU64,
+    pub cubes_filtered: AtomicU64,
+    pub gpu_filtered: AtomicU64,
 }
+// Veredicto de un prefiltro de cubos: lo que demuestra de un cubo sin buscar.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum CubeVerdict {
+    Unknown,
+    // El cubo no tiene ninguna extensión que cumpla la fórmula.
+    Unsat,
+    // Un modelo: pasa a ser la respuesta del enjambre.
+    Sat(Vec<i32>),
+}
+// Prefiltro de cubos: recibe los cubos recién generados, en literales DIMACS, y devuelve un
+// veredicto por cubo en el mismo orden. El motor no sabe quién lo implementa, y quien lo
+// aporta responde de lo que afirma: `Unsat` ha de valer para la fórmula del enjambre o para
+// una parte de ella, y el modelo de `Sat` no se comprueba aquí.
+pub type CubeFilter<'a> = &'a mut dyn FnMut(&[Vec<i32>]) -> Vec<CubeVerdict>;
 // Un worker publica sus conflictos por lotes: una escritura atómica cada PROGRESS_BATCH
 // conflictos, para no disputarse la línea de caché del contador en cada uno.
 const PROGRESS_BATCH: usize = 64;
@@ -1659,6 +1678,13 @@ pub fn solve_swarm(formula: &[Vec<i32>], config: SwarmConfig) -> (Option<Vec<i32
 pub fn solve_swarm_with_progress(
     formula: &[Vec<i32>], config: SwarmConfig, progress: Option<&SwarmProgress>,
 ) -> (Option<Vec<i32>>, SwarmStats) {
+    solve_swarm_with_filter(formula, config, progress, None)
+}
+// El mismo enjambre, con un prefiltro que ve los cubos antes que los workers. Sin él, todos
+// los cubos van a los workers, como siempre.
+pub fn solve_swarm_with_filter(
+    formula: &[Vec<i32>], config: SwarmConfig, progress: Option<&SwarmProgress>, filter: Option<CubeFilter<'_>>,
+) -> (Option<Vec<i32>>, SwarmStats) {
     let mut stats = SwarmStats::default();
     let feedback = active(Some(config.reignition));
     let prepared = prepare_formula(formula, feedback.map(|configuration| configuration.oracle));
@@ -1686,10 +1712,35 @@ pub fn solve_swarm_with_progress(
         }
     }
     stats.total = base.stats;
-    let cubes = make_cubes(&base, config);
+    let mut cubes = make_cubes(&base, config);
     stats.cubes_generated = cubes.len();
     if let Some(progress) = progress {
         progress.cubes_total.store(cubes.len() as u64, Ordering::Relaxed);
+    }
+    if let Some(filter) = filter {
+        // El filtro ve los cubos en literales DIMACS. Si no contesta a todos, no ha
+        // contestado a ninguno.
+        let mut line = Vec::new();
+        let asked: Vec<Vec<i32>> = cubes.iter().map(|cube| {
+            external(&variables, cube, &mut line);
+            line.clone()
+        }).collect();
+        let verdicts = filter(&asked);
+        if verdicts.len() == cubes.len() {
+            let mut open = Vec::with_capacity(cubes.len());
+            for (cube, verdict) in cubes.into_iter().zip(verdicts) {
+                match verdict {
+                    // El modelo es la respuesta: no hace falta ningún worker.
+                    CubeVerdict::Sat(model) => return (Some(model), stats),
+                    CubeVerdict::Unsat => stats.cubes_filtered += 1,
+                    CubeVerdict::Unknown => open.push(cube),
+                }
+            }
+            cubes = open;
+            if let Some(progress) = progress {
+                progress.cubes_filtered.store(stats.cubes_filtered as u64, Ordering::Relaxed);
+            }
+        }
     }
     let workers = config.workers.max(1).min(cubes.len());
     let next = AtomicUsize::new(0);
@@ -1729,7 +1780,10 @@ pub fn solve_swarm_with_progress(
     }
     stats.shared_clauses = pool.snapshot(&variables);
     if winner.is_none() {
-        assert_eq!(stats.cubes_unsat, stats.cubes_generated, "Incomplete cube coverage cannot prove UNSAT");
+        assert_eq!(
+            stats.cubes_unsat + stats.cubes_filtered, stats.cubes_generated,
+            "Incomplete cube coverage cannot prove UNSAT"
+        );
     }
     (winner, stats)
 }

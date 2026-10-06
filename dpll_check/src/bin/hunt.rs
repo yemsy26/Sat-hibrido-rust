@@ -19,9 +19,9 @@
 //     --timeout S         aborta a los S segundos (estado TIMEOUT, codigo 124)
 //     --heartbeat S       linea de progreso en stderr cada S segundos
 //     --csv ETIQUETA      una fila CSV en la salida estandar (`hunt --header` da la cabecera)
-//     --use-gpu           abre la GPU CUDA, compila su nucleo de propagacion unitaria y lo
-//                         prueba con una sonda de cubos (gpu_dispatcher.rs); pide compilar
-//                         con `--features gpu`. La busqueda sigue entera en CPU
+//     --use-gpu           filtra cubos con propagacion unitaria CUDA antes del enjambre;
+//                         exige --workers y compilar con --features gpu.
+//                         Los cubos Unknown conservan la busqueda CDCL existente.
 //
 // El motor no tiene puntos de control. En serie, el unico progreso observable desde fuera
 // es el crecimiento de la traza. El enjambre publica sus conflictos y cubos cerrados: con
@@ -133,6 +133,9 @@ fn parse_options(arguments: &[String]) -> Result<Options, String> {
     }
     if options.proof.is_some() && options.ramsey_symm.is_some() {
         return Err("--ramsey-symm no admite --proof: la traza hablaria de una formula que no es la del fichero".into());
+    }
+    if options.use_gpu && (options.workers.is_none() || options.preprocess_only) {
+        return Err("--use-gpu exige --workers y no admite --preprocess-only".into());
     }
     Ok(options)
 }
@@ -336,8 +339,63 @@ fn open_gpu(formula: &Formula) -> Result<gpu_dispatcher::GpuConqueror, String> {
         count(|verdict| matches!(verdict, gpu_dispatcher::SolveResult::Sat(_))),
         count(|verdict| *verdict == gpu_dispatcher::SolveResult::Unknown),
     );
-    eprintln!("c gpu: modo Cube and Conquer preparado. La GPU filtra cubos por propagacion unitaria; la busqueda sigue en CPU y todavia no le envia ninguno");
+    eprintln!("c gpu: prefiltro Cube and Conquer listo; los cubos no decididos pasan al enjambre CPU");
     Ok(conqueror)
+}
+
+fn solve_hybrid_parallel_with_gpu(
+    formula: &Formula,
+    config: HybridConfig,
+    swarm: SwarmConfig,
+    progress: Option<&SwarmProgress>,
+    gpu: Option<&mut gpu_dispatcher::GpuConqueror>,
+) -> hybrid::ParallelHybridReport {
+    let Some(gpu) = gpu else {
+        return solve_hybrid_parallel_with_progress(formula, config, swarm, progress);
+    };
+    let max_cubes = gpu.plan().cubes;
+    let max_cube_literals = gpu.plan().cube_literals;
+    let mut filter = |cubes: &[Vec<i32>]| -> Vec<hybrid::cdcl::CubeVerdict> {
+        use gpu_dispatcher::SolveResult;
+        use hybrid::cdcl::CubeVerdict;
+
+        let mut verdicts = vec![CubeVerdict::Unknown; cubes.len()];
+        let max_width = cubes.iter().map(Vec::len).max().unwrap_or(0).max(1);
+        let batch_capacity = max_cubes.min(max_cube_literals / max_width);
+        if batch_capacity == 0 { return verdicts; }
+
+        for (batch_index, batch) in cubes.chunks(batch_capacity).enumerate() {
+            // El plan contiene la formula original, no la extendida por preprocess.
+            let results = gpu.dispatch_cubes(formula, batch);
+            if let Some(error) = gpu.last_error() {
+                eprintln!("c gpu: lote devuelto a CPU: {error}");
+                continue;
+            }
+            if results.len() != batch.len() { continue; }
+
+            let offset = batch_index * batch_capacity;
+            for (index, result) in results.into_iter().enumerate() {
+                verdicts[offset + index] = match result {
+                    SolveResult::Sat(model) => {
+                        // dispatch_cubes ya verifica formula y cubo en la CPU.
+                        verdicts[offset + index] = CubeVerdict::Sat(model);
+                        return verdicts;
+                    }
+                    SolveResult::Unsat => {
+                        if let Some(progress) = progress {
+                            progress.gpu_filtered.fetch_add(1, Ordering::Relaxed);
+                        }
+                        CubeVerdict::Unsat
+                    }
+                    SolveResult::Unknown => CubeVerdict::Unknown,
+                };
+            }
+        }
+        verdicts
+    };
+    hybrid::solve_hybrid_parallel_with_filter(
+        formula, config, swarm, progress, Some(&mut filter),
+    )
 }
 
 fn run(options: &Options) -> Result<i32, String> {
@@ -366,10 +424,8 @@ fn run(options: &Options) -> Result<i32, String> {
             formula.len() - before, breaker.auxiliaries(), start.elapsed().as_secs_f64() * 1000.0,
         );
     }
-    // Sin --use-gpu no se toca la tarjeta ni se mira si existe. Con ella, el controlador
-    // vive lo que la ejecucion, pero la busqueda todavia no le envia nada. Recibe la
-    // formula tal como la vera el motor, con lo que --ramsey-symm le haya anadido.
-    let _conqueror = if options.use_gpu { Some(open_gpu(&formula)?) } else { None };
+    // Sin --use-gpu no se abre CUDA ni se construye el prefiltro.
+    let mut conqueror = if options.use_gpu { Some(open_gpu(&formula)?) } else { None };
     let mut config = HybridConfig { symmetry: options.symmetry, parity: options.parity, ..HybridConfig::default() };
     config.oracle.flips_per_variable = options.flips;
     config.reignition_interval = options.interval;
@@ -393,9 +449,10 @@ fn run(options: &Options) -> Result<i32, String> {
 
     // Vigilante: progreso y limite de tiempo, sin tocar el motor.
     let gauge = Arc::new(Gauge::default());
-    // Avance del enjambre: solo se le pide al motor si hay latido o limite que lo vayan a
-    // mostrar. Sin ellos el enjambre corre sin observador, como siempre.
-    let progress = (mode == "swarm" && (options.heartbeat.is_some() || options.timeout.is_some()))
+    // Sin GPU, latido ni limite, el enjambre conserva su ruta sin observador.
+    let gpu_active = conqueror.is_some();
+    let progress = (mode == "swarm"
+        && (options.heartbeat.is_some() || options.timeout.is_some() || gpu_active))
         .then(|| Arc::new(SwarmProgress::default()));
     {
         let (gauge, prefix, csv) = (Arc::clone(&gauge), prefix.clone(), options.csv.is_some());
@@ -422,10 +479,18 @@ fn run(options: &Options) -> Result<i32, String> {
                 // finales, y esta linea es lo unico que queda de la busqueda.
                 if let Some(progress) = progress.as_deref().filter(|_| beat || expired) {
                     let conflicts = progress.conflicts.load(Ordering::Relaxed);
-                    eprintln!("{}", status_line(
-                        elapsed, conflicts, last,
-                        progress.cubes_closed.load(Ordering::Relaxed), progress.cubes_total.load(Ordering::Relaxed),
-                    ));
+                    let cpu_closed = progress.cubes_closed.load(Ordering::Relaxed);
+                    let total = progress.cubes_total.load(Ordering::Relaxed);
+                    if gpu_active {
+                        let gpu_filtered = progress.gpu_filtered.load(Ordering::Relaxed);
+                        eprintln!(
+                            "{}; gpu_filtered={gpu_filtered}",
+                            status_line(elapsed, conflicts, last,
+                                cpu_closed.saturating_add(gpu_filtered), total),
+                        );
+                    } else {
+                        eprintln!("{}", status_line(elapsed, conflicts, last, cpu_closed, total));
+                    }
                     last = (elapsed, conflicts);
                 }
                 if expired {
@@ -446,7 +511,9 @@ fn run(options: &Options) -> Result<i32, String> {
         let swarm = SwarmConfig {
             workers, cubes_per_worker: options.cubes, share_enabled: options.share, ..SwarmConfig::default()
         };
-        let report = solve_hybrid_parallel_with_progress(&formula, config, swarm, progress.as_deref());
+        let report = solve_hybrid_parallel_with_gpu(
+            &formula, config, swarm, progress.as_deref(), conqueror.as_mut(),
+        );
         let stats = &report.swarm;
         Outcome {
             model: report.model, symmetry: report.symmetry, parity: report.parity, search: stats.total,
@@ -482,6 +549,12 @@ fn run(options: &Options) -> Result<i32, String> {
         outcome.symmetry.generators, outcome.symmetry.clauses, outcome.symmetry.ms,
         outcome.search.decisions, outcome.search.conflicts, outcome.search.reignitions,
     );
+    if gpu_active {
+        let gpu_filtered = progress.as_deref().map_or(0, |progress| {
+            progress.gpu_filtered.load(Ordering::Relaxed)
+        });
+        eprintln!("c gpu: gpu_filtered={gpu_filtered} cubos refutados antes de llegar a CPU");
+    }
     if options.proof.is_some() {
         eprintln!(
             "c traza: {} bytes, {} lineas, {} dominancias, {} borrados{}",
