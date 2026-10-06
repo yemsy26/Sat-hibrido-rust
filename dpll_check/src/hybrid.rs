@@ -186,9 +186,15 @@ pub fn load_equations(formula: &[Clause], enabled: bool) -> (gf2::Gf2Propagator,
 // Son consecuencia de la formula original, luego tambien de la extendida por las otras
 // capas. Un sistema lineal contradictorio se responde sin buscar. No deja traza.
 pub fn solve_hybrid_gf2(formula: &[Clause], config: HybridConfig) -> HybridReport {
+    solve_hybrid_with_equations(formula, config, load_equations(formula, true).0)
+}
+
+// Como `solve_hybrid_gf2`, con el sistema ya cargado y reducido por `load_equations`.
+pub fn solve_hybrid_with_equations(
+    formula: &[Clause], config: HybridConfig, equations: gf2::Gf2Propagator,
+) -> HybridReport {
     use std::time::Instant;
-    let (equations, outcome) = load_equations(formula, true);
-    if outcome == gf2::Gf2Outcome::Contradiction {
+    if equations.is_contradictory() {
         return HybridReport {
             model: None, symmetry: SymmetryStats::default(), parity: ParityStats::default(),
             cdcl: SolveStats { conflicts: 1, ..SolveStats::default() }, cdcl_ms: 0.0,
@@ -210,11 +216,17 @@ pub fn solve_hybrid_gf2(formula: &[Clause], config: HybridConfig) -> HybridRepor
 
 // Como `solve_hybrid_parallel`, con las ecuaciones XOR evaluadas por todos los workers.
 pub fn solve_hybrid_parallel_gf2(
-    formula: &[Clause], config: HybridConfig, mut swarm: cdcl::SwarmConfig,
+    formula: &[Clause], config: HybridConfig, swarm: cdcl::SwarmConfig,
+) -> ParallelHybridReport {
+    solve_hybrid_parallel_with_equations(formula, config, swarm, load_equations(formula, true).0)
+}
+
+// Como `solve_hybrid_parallel_gf2`, con el sistema ya cargado y reducido.
+pub fn solve_hybrid_parallel_with_equations(
+    formula: &[Clause], config: HybridConfig, mut swarm: cdcl::SwarmConfig, equations: gf2::Gf2Propagator,
 ) -> ParallelHybridReport {
     use std::time::Instant;
-    let (equations, outcome) = load_equations(formula, true);
-    if outcome == gf2::Gf2Outcome::Contradiction {
+    if equations.is_contradictory() {
         let mut stats = cdcl::SwarmStats::default();
         stats.total.conflicts = 1;
         return ParallelHybridReport {

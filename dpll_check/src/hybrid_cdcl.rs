@@ -697,8 +697,9 @@ struct State {
     propagated: u64,
     reignition_mark: u64,
     root_unsat: bool,
-    // Ecuaciones XOR reducidas, compartidas entre los workers; `None` es el motor clasico.
-    gf2: Option<Arc<Gf2Propagator>>,
+    // Ecuaciones XOR reducidas con su vigilancia, propia de cada worker; `None` es el motor
+    // clasico.
+    gf2: Option<Box<Gf2Propagator>>,
     stats: SolveStats,
 }
 impl State {
@@ -807,8 +808,8 @@ impl State {
                 return Some(conflict);
             }
             // Sin ecuaciones, que es el motor clasico, esto es una comparacion por punto fijo.
-            let Some(gf2) = self.gf2.take() else { return None };
-            let step = self.propagate_equations(&gf2);
+            let Some(mut gf2) = self.gf2.take() else { return None };
+            let step = self.propagate_equations(&mut gf2);
             self.gf2 = Some(gf2);
             match step {
                 Ok(true) => continue,
@@ -817,23 +818,22 @@ impl State {
             }
         }
     }
-    // Evalua cada fila reducida bajo la asignacion actual; la matriz no cambia. Una fila que
-    // fuerza o contradice se materializa como la clausula que lo justifica hoy, y desde ahi
-    // vigilancia, analisis y borrado son los de cualquier clausula aprendida. Esa clausula
-    // es consecuencia de la formula porque la fila lo es. `Ok(true)` si se asigno algo.
-    fn propagate_equations(&mut self, gf2: &Gf2Propagator) -> Result<bool, Conflict> {
+    // Da a las ecuaciones lo asignado desde su ultima llamada; la matriz no cambia. Una fila
+    // que fuerza o contradice se materializa como la clausula que lo justifica hoy, y desde
+    // ahi vigilancia, analisis y borrado son los de cualquier clausula aprendida. Esa
+    // clausula es consecuencia de la formula porque la fila lo es. `Ok(true)` si se asigno algo.
+    fn propagate_equations(&mut self, gf2: &mut Gf2Propagator) -> Result<bool, Conflict> {
         let mut forced = false;
-        let mut row = 0;
         loop {
-            match gf2.propagate_trail(&self.values, row) {
+            let level_start = self.trail_limits.last().copied().unwrap_or(0);
+            match gf2.propagate_trail(&self.values, &self.trail, self.level(), level_start) {
                 Gf2PropagationResult::Idle => return Ok(forced),
-                Gf2PropagationResult::Unit { row: found, variable, value } => {
-                    self.imply(gf2.bound_row(found), (variable << 1) | u32::from(!value));
+                Gf2PropagationResult::Unit { row, variable, value } => {
+                    self.imply(gf2.bound_row(row), (variable << 1) | u32::from(!value));
                     forced = true;
-                    row = found + 1;
                 }
-                Gf2PropagationResult::Conflict { row: found } => {
-                    return Err(self.contradict(gf2.bound_row(found)));
+                Gf2PropagationResult::Conflict { row } => {
+                    return Err(self.contradict(gf2.bound_row(row)));
                 }
             }
         }
@@ -1494,9 +1494,11 @@ fn external(variables: &[u32], clause: &[u32], line: &mut Vec<i32>) {
 // Enlaza las ecuaciones reducidas con los indices de variable de este estado.
 fn attach_equations(state: &mut State, variables: &[u32], gf2: Option<Gf2Propagator>) {
     let Some(mut gf2) = gf2 else { return };
-    gf2.bind(|id| variables.binary_search(&id).expect("Equation variables occur in the formula") as u32);
+    gf2.bind(variables.len(), |id| {
+        variables.binary_search(&id).expect("Equation variables occur in the formula") as u32
+    });
     if gf2.bound_rows() > 0 {
-        state.gf2 = Some(Arc::new(gf2));
+        state.gf2 = Some(Box::new(gf2));
     }
 }
 pub fn solve_cdcl(formula: &[Vec<i32>]) -> (Option<Vec<i32>>, SolveStats) {

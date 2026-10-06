@@ -33,8 +33,8 @@ use hybrid::cdcl::SwarmConfig;
 use hybrid::proof::PbProof;
 use hybrid::gf2 as gf2_engine;
 use hybrid::{
-    load_equations, solve_hybrid, solve_hybrid_gf2, solve_hybrid_parallel, solve_hybrid_parallel_gf2,
-    solve_hybrid_with_proof, verify_model, HybridConfig, SolveStats,
+    load_equations, solve_hybrid, solve_hybrid_parallel, solve_hybrid_parallel_with_equations,
+    solve_hybrid_with_equations, solve_hybrid_with_proof, verify_model, HybridConfig, SolveStats,
 };
 use std::fs::File;
 use std::io::{self, Write};
@@ -301,7 +301,9 @@ fn run(options: &Options) -> Result<i32, String> {
         options.flips, options.interval, formula.len(),
     );
     eprintln!("c {}: {variables} variables, {} clausulas, modo {mode}", options.input, formula.len());
-    // Sin --use-gf2 no se extrae ninguna ecuacion y el motor es exactamente el clasico.
+    // Sin --use-gf2 no se extrae ninguna ecuacion y el motor es exactamente el clasico. Con
+    // ella el sistema se reduce una sola vez: sirve para informar, para atajar y para buscar.
+    let mut equations = None;
     if options.use_gf2 {
         let start = Instant::now();
         let (gf2, outcome) = load_equations(&formula, true);
@@ -320,6 +322,7 @@ fn run(options: &Options) -> Result<i32, String> {
             println!("s UNSATISFIABLE");
             return Ok(20);
         }
+        equations = Some(gf2);
     }
 
     // Vigilante: progreso y limite de tiempo, sin tocar el motor.
@@ -358,10 +361,9 @@ fn run(options: &Options) -> Result<i32, String> {
         let swarm = SwarmConfig {
             workers, cubes_per_worker: options.cubes, share_enabled: options.share, ..SwarmConfig::default()
         };
-        let report = if options.use_gf2 {
-            solve_hybrid_parallel_gf2(&formula, config, swarm)
-        } else {
-            solve_hybrid_parallel(&formula, config, swarm)
+        let report = match equations.take() {
+            Some(equations) => solve_hybrid_parallel_with_equations(&formula, config, swarm, equations),
+            None => solve_hybrid_parallel(&formula, config, swarm),
         };
         let stats = &report.swarm;
         Outcome {
@@ -382,7 +384,10 @@ fn run(options: &Options) -> Result<i32, String> {
             search_ms: report.cdcl_ms, cubes: [0; 4], trace,
         }
     } else {
-        let report = if options.use_gf2 { solve_hybrid_gf2(&formula, config) } else { solve_hybrid(&formula, config) };
+        let report = match equations.take() {
+            Some(equations) => solve_hybrid_with_equations(&formula, config, equations),
+            None => solve_hybrid(&formula, config),
+        };
         Outcome {
             model: report.model, symmetry: report.symmetry, parity: report.parity, search: report.cdcl,
             search_ms: report.cdcl_ms, cubes: [0; 4], trace: [0, 0],

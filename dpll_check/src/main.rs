@@ -1877,9 +1877,10 @@ pub mod gf2 {
 // solucion.
 //
 // Dentro de la busqueda la matriz no se toca: `bind` traduce una vez la forma reducida a
-// los indices de variable del motor y `propagate_trail` evalua cada fila bajo la asignacion
-// actual. Es propagacion fila a fila sobre una matriz fija, no eliminacion incremental: lo
-// que solo se deduce combinando filas bajo una asignacion parcial no se ve.
+// los indices de variable del motor y `propagate_trail` atiende solo a las filas que
+// vigilan una variable recien asignada (dos vigiladas por fila). Sigue siendo propagacion
+// fila a fila sobre una matriz fija, no eliminacion incremental: lo que solo se deduce
+// combinando filas bajo una asignacion parcial no se ve.
 //
 // Apagado (`new(false)`) no reserva memoria y todas sus operaciones vuelven sin hacer nada.
 use std::collections::HashMap;
@@ -1896,7 +1897,7 @@ pub enum Gf2Outcome {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Gf2PropagationResult {
-    // Ninguna fila, desde la indicada, fuerza ni contradice nada.
+    // Nada de lo asignado desde la ultima llamada fuerza ni contradice ninguna fila.
     Idle,
     // A la fila `row` le queda una sola variable libre, que debe valer `value`.
     Unit { row: usize, variable: u32, value: bool },
@@ -1904,6 +1905,7 @@ pub enum Gf2PropagationResult {
     Conflict { row: usize },
 }
 
+#[derive(Clone)]
 pub struct Gf2Propagator {
     enabled: bool,
     // Variable de cada columna, por orden de primera aparicion, y su inversa.
@@ -1926,6 +1928,17 @@ pub struct Gf2Propagator {
     bound: Vec<u32>,
     bound_starts: Vec<u32>,
     bound_constants: Vec<bool>,
+    // Vigilancia: las filas que vigila cada variable del motor y las dos variables que
+    // vigila cada fila.
+    watches: Vec<Vec<u32>>,
+    watched_by_row: Vec<[u32; 2]>,
+    // Filas de una sola variable: unidades de la raiz, de las que `settled` ya estan fijadas.
+    singles: Vec<u32>,
+    settled: usize,
+    // Cuanto del trail se ha procesado, y donde empezaba cada nivel de decision la ultima
+    // vez que se miro: `starts[n]` es el principio del nivel n + 1.
+    cursor: usize,
+    starts: Vec<usize>,
 }
 
 impl Gf2Propagator {
@@ -1936,6 +1949,8 @@ impl Gf2Propagator {
             ends: Vec::new(), constants: Vec::new(), words: 0, matrix: Vec::new(),
             pivots: Vec::new(), inconsistent: false,
             bound: Vec::new(), bound_starts: Vec::new(), bound_constants: Vec::new(),
+            watches: Vec::new(), watched_by_row: Vec::new(), singles: Vec::new(), settled: 0,
+            cursor: 0, starts: Vec::new(),
         }
     }
     pub fn is_enabled(&self) -> bool {
@@ -1950,6 +1965,10 @@ impl Gf2Propagator {
     // Filas no nulas de la forma reducida calculada por la ultima `eliminate`.
     pub fn rank(&self) -> usize {
         self.pivots.len()
+    }
+    // La ultima `eliminate` encontro una fila 0 = 1.
+    pub fn is_contradictory(&self) -> bool {
+        self.inconsistent
     }
     // Anade la ecuacion: el XOR de `variables` vale `constant`. Una variable repetida se
     // cancela consigo misma; una ecuacion sin variables y con `constant` es ya 0 = 1.
@@ -2055,21 +2074,43 @@ impl Gf2Propagator {
             (variables.len() == 1).then(|| (variables[0], constant))
         }).collect()
     }
-    // Enlaza la forma reducida con el motor: `index_of` da el indice interno de cada
-    // variable. Se llama una vez, despues de `eliminate`; la busqueda ya no toca la matriz.
-    pub fn bind(&mut self, index_of: impl Fn(u32) -> u32) {
+    // Enlaza la forma reducida con el motor, que tiene `variables` variables; `index_of` da
+    // el indice interno de cada una. Cada fila pasa a vigilar sus dos primeras variables. Se
+    // llama una vez, despues de `eliminate`; la busqueda ya no toca la matriz.
+    pub fn bind(&mut self, variables: usize, index_of: impl Fn(u32) -> u32) {
         self.bound.clear();
         self.bound_starts.clear();
         self.bound_constants.clear();
-        if !self.enabled || self.inconsistent {
+        self.watches.clear();
+        self.watched_by_row.clear();
+        self.singles.clear();
+        self.starts.clear();
+        (self.settled, self.cursor) = (0, 0);
+        if !self.enabled || self.inconsistent || self.rank() == 0 {
             return;
         }
+        self.watches.resize(variables, Vec::new());
         self.bound_starts.push(0);
         for index in 0..self.rank() {
-            let (variables, constant) = self.row(index);
-            self.bound.extend(variables.into_iter().map(&index_of));
+            let (row_variables, constant) = self.row(index);
+            let row = self.bound_constants.len() as u32;
+            let start = self.bound.len();
+            self.bound.extend(row_variables.into_iter().map(&index_of));
             self.bound_starts.push(self.bound.len() as u32);
             self.bound_constants.push(constant);
+            // Una fila reducida tiene al menos su pivote; con una sola variable es una unidad.
+            let first = self.bound[start];
+            match self.bound.get(start + 1).copied() {
+                Some(second) => {
+                    self.watches[first as usize].push(row);
+                    self.watches[second as usize].push(row);
+                    self.watched_by_row.push([first, second]);
+                }
+                None => {
+                    self.singles.push(row);
+                    self.watched_by_row.push([first, first]);
+                }
+            }
         }
     }
     pub fn bound_rows(&self) -> usize {
@@ -2079,32 +2120,88 @@ impl Gf2Propagator {
     pub fn bound_row(&self, row: usize) -> &[u32] {
         &self.bound[self.bound_starts[row] as usize..self.bound_starts[row + 1] as usize]
     }
-    // Evalua las filas enlazadas, desde `start`, bajo la asignacion del motor y devuelve la
-    // primera que fuerza o contradice. `values` va indexado por literal: el de la variable
-    // v es `values[2 * v]`, con 1 verdadero, -1 falso y 0 libre.
-    pub fn propagate_trail(&self, values: &[i8], start: usize) -> Gf2PropagationResult {
-        for row in start..self.bound_constants.len() {
-            // Paridad que le falta a la fila: termino independiente mas lo ya asignado.
-            let mut parity = self.bound_constants[row];
-            let mut free = 0;
-            let mut open = 0;
-            for &variable in self.bound_row(row) {
-                match values[(variable << 1) as usize] {
-                    0 => {
-                        open += 1;
-                        if open == 2 {
-                            break;
-                        }
-                        free = variable;
-                    }
-                    value => parity ^= value > 0,
-                }
-            }
-            match open {
-                0 if parity => return Gf2PropagationResult::Conflict { row },
-                1 => return Gf2PropagationResult::Unit { row, variable: free, value: parity },
+    // Procesa lo que el motor ha asignado desde la ultima llamada y devuelve la primera fila
+    // que fuerza o contradice; `Idle` cuando el trail esta visto entero. El motor la llama
+    // en cada punto fijo de sus clausulas, antes de decidir, y repite hasta `Idle`.
+    //   values        indexado por literal: el de la variable v es `values[2 * v]`, con 1
+    //                 verdadero, -1 falso y 0 libre
+    //   trail         literales asignados, en orden
+    //   level         nivel de decision actual; `level_start` es donde empieza en el trail
+    // Cada fila vigila dos variables. Mientras le queden dos libres, sus vigiladas lo estan
+    // y nadie la mira. Al asignarse una vigilada se busca otra libre que la sustituya, y
+    // solo si no la hay la fila puede forzar o contradecir. Al retroceder no se deshace
+    // nada: las vigiladas de una fila son sus ultimas asignadas, las primeras en liberarse.
+    pub fn propagate_trail(
+        &mut self, values: &[i8], trail: &[u32], level: usize, level_start: usize,
+    ) -> Gf2PropagationResult {
+        if self.bound_constants.is_empty() {
+            return Gf2PropagationResult::Idle;
+        }
+        // Unidades de la formula. Fijadas en la raiz no se vuelven a mirar; si alguna se
+        // asigno mas arriba, se repasa hasta que la raiz la fije.
+        let mut single = self.settled;
+        while single < self.singles.len() {
+            let row = self.singles[single] as usize;
+            let variable = self.bound[self.bound_starts[row] as usize];
+            let wanted = self.bound_constants[row];
+            match values[(variable << 1) as usize] {
+                0 => return Gf2PropagationResult::Unit { row, variable, value: wanted },
+                value if (value > 0) != wanted => return Gf2PropagationResult::Conflict { row },
+                _ if level == 0 && single == self.settled => self.settled += 1,
                 _ => {}
             }
+            single += 1;
+        }
+        // Si la busqueda retrocedio, el trail se corto donde empezaba el nivel siguiente al
+        // actual: todo lo anterior sigue visto y se retoma justo ahi.
+        if level < self.starts.len() {
+            self.cursor = self.cursor.min(self.starts[level]);
+            self.starts.truncate(level);
+        }
+        // Un nivel nuevo empieza donde dice el motor; si se abrieron varios sin mirar, de
+        // los intermedios solo se sabe que empezaron despues de lo ya visto.
+        while self.starts.len() < level {
+            let known = if self.starts.len() + 1 == level { level_start } else { self.cursor.min(level_start) };
+            self.starts.push(known);
+        }
+        self.cursor = self.cursor.min(trail.len());
+        while self.cursor < trail.len() {
+            let variable = trail[self.cursor] >> 1;
+            let mut index = 0;
+            while index < self.watches[variable as usize].len() {
+                let row = self.watches[variable as usize][index] as usize;
+                let [first, second] = self.watched_by_row[row];
+                let other = if first == variable { second } else { first };
+                // Un solo recorrido: la paridad de lo asignado y, si aparece, un sustituto.
+                let mut parity = self.bound_constants[row];
+                let mut replacement = None;
+                for &candidate in &self.bound[self.bound_starts[row] as usize..self.bound_starts[row + 1] as usize] {
+                    match values[(candidate << 1) as usize] {
+                        0 if candidate != other => {
+                            replacement = Some(candidate);
+                            break;
+                        }
+                        0 => {}
+                        value => parity ^= value > 0,
+                    }
+                }
+                if let Some(candidate) = replacement {
+                    // La fila deja de vigilar `variable`; otra ocupa su hueco en la lista.
+                    self.watches[variable as usize].swap_remove(index);
+                    self.watches[candidate as usize].push(row as u32);
+                    self.watched_by_row[row] = [other, candidate];
+                    continue;
+                }
+                // Todo asignado salvo, quiza, la otra vigilada: `parity` es lo que falta.
+                if values[(other << 1) as usize] == 0 {
+                    return Gf2PropagationResult::Unit { row, variable: other, value: parity };
+                }
+                if parity {
+                    return Gf2PropagationResult::Conflict { row };
+                }
+                index += 1;
+            }
+            self.cursor += 1;
         }
         Gf2PropagationResult::Idle
     }
@@ -2138,52 +2235,215 @@ mod tests {
         assert_eq!(gf2.eliminate(), Gf2Outcome::Disabled);
         assert_eq!((gf2.equations(), gf2.variables(), gf2.rank()), (0, 0, 0));
         assert!(gf2.units().is_empty() && !gf2.is_enabled());
-        gf2.bind(|id| id);
-        assert_eq!(gf2.propagate_trail(&[], 0), Gf2PropagationResult::Idle);
+        gf2.bind(1000, |id| id);
+        assert_eq!(gf2.propagate_trail(&[], &[], 0, 0), Gf2PropagationResult::Idle);
         let reserved = gf2.variables.capacity() + gf2.column_of.capacity() + gf2.terms.capacity()
             + gf2.ends.capacity() + gf2.constants.capacity() + gf2.matrix.capacity() + gf2.pivots.capacity()
-            + gf2.bound.capacity() + gf2.bound_starts.capacity() + gf2.bound_constants.capacity();
+            + gf2.bound.capacity() + gf2.bound_starts.capacity() + gf2.bound_constants.capacity()
+            + gf2.watches.capacity() + gf2.watched_by_row.capacity() + gf2.singles.capacity()
+            + gf2.starts.capacity();
         assert_eq!(reserved, 0);
     }
 
-    // Asignacion del motor: `values[2 * v]` es el valor de la variable v.
-    fn assignment(variables: usize, assigned: &[(u32, bool)]) -> Vec<i8> {
-        let mut values = vec![0_i8; 2 * variables];
-        for &(variable, value) in assigned {
-            values[(variable << 1) as usize] = if value { 1 } else { -1 };
-            values[(variable << 1 | 1) as usize] = if value { -1 } else { 1 };
+    // Motor minimo: valores por literal, trail y niveles, con el protocolo del CDCL.
+    struct Mini {
+        values: Vec<i8>,
+        trail: Vec<u32>,
+        limits: Vec<usize>,
+    }
+    impl Mini {
+        fn new(variables: usize) -> Self {
+            Self { values: vec![0; 2 * variables], trail: Vec::new(), limits: Vec::new() }
         }
-        values
+        fn value(&self, variable: u32) -> i8 {
+            self.values[(variable << 1) as usize]
+        }
+        fn assign(&mut self, variable: u32, value: bool) {
+            assert_eq!(self.value(variable), 0);
+            self.values[(variable << 1) as usize] = if value { 1 } else { -1 };
+            self.values[(variable << 1 | 1) as usize] = if value { -1 } else { 1 };
+            self.trail.push((variable << 1) | u32::from(!value));
+        }
+        fn decide(&mut self, variable: u32, value: bool) {
+            self.limits.push(self.trail.len());
+            self.assign(variable, value);
+        }
+        fn backjump(&mut self, level: usize) {
+            for literal in self.trail.drain(self.limits[level]..) {
+                self.values[literal as usize] = 0;
+                self.values[(literal ^ 1) as usize] = 0;
+            }
+            self.limits.truncate(level);
+        }
+        // Lleva las ecuaciones a su punto fijo: literales forzados, o la fila en conflicto.
+        fn settle(&mut self, gf2: &mut Gf2Propagator) -> Result<usize, usize> {
+            let mut forced = 0;
+            loop {
+                let start = self.limits.last().copied().unwrap_or(0);
+                match gf2.propagate_trail(&self.values, &self.trail, self.limits.len(), start) {
+                    Gf2PropagationResult::Idle => return Ok(forced),
+                    Gf2PropagationResult::Unit { variable, value, .. } => {
+                        self.assign(variable, value);
+                        forced += 1;
+                    }
+                    Gf2PropagationResult::Conflict { row } => return Err(row),
+                }
+            }
+        }
+    }
+
+    // Referencia sin vigilancia: filas con una sola variable libre y filas contradichas.
+    fn scan(gf2: &Gf2Propagator, values: &[i8]) -> (Vec<usize>, Vec<usize>) {
+        let (mut units, mut conflicts) = (Vec::new(), Vec::new());
+        for row in 0..gf2.bound_rows() {
+            let variables = gf2.bound_row(row);
+            let open = variables.iter().filter(|&&variable| values[(variable << 1) as usize] == 0).count();
+            let parity = variables.iter().fold(gf2.bound_constants[row], |parity, &variable| {
+                parity ^ (values[(variable << 1) as usize] > 0)
+            });
+            match open {
+                0 if parity => conflicts.push(row),
+                1 => units.push(row),
+                _ => {}
+            }
+        }
+        (units, conflicts)
     }
 
     #[test]
-    fn rows_are_evaluated_under_the_assignment_without_touching_the_matrix() {
-        // Dos filas independientes sobre los indices 0..5: x0 ^ x1 ^ x2 = 1 y x3 ^ x4 = 0.
+    fn watched_rows_force_and_contradict_as_the_trail_grows_and_shrinks() {
+        // Dos filas sobre los indices 0..5: x0 ^ x1 ^ x2 = 1 y x3 ^ x4 = 0.
         let mut gf2 = Gf2Propagator::new(true);
         gf2.add_xor(&[10, 11, 12], true);
         gf2.add_xor(&[13, 14], false);
         assert_eq!(gf2.eliminate(), Gf2Outcome::Consistent { rank: 2 });
-        gf2.bind(|id| id - 10);
-        assert_eq!(gf2.bound_rows(), 2);
+        gf2.bind(5, |id| id - 10);
         assert_eq!((gf2.bound_row(0), gf2.bound_row(1)), (&[0, 1, 2][..], &[3, 4][..]));
-        // Dos libres en cada fila: nada que decir.
-        assert_eq!(gf2.propagate_trail(&assignment(5, &[(0, true)]), 0), Gf2PropagationResult::Idle);
-        // x0 = 1, x2 = 1 fuerzan x1 = 1 ^ 1 ^ 1 = 1.
-        let values = assignment(5, &[(0, true), (2, true)]);
-        assert_eq!(gf2.propagate_trail(&values, 0), Gf2PropagationResult::Unit { row: 0, variable: 1, value: true });
-        assert_eq!(gf2.propagate_trail(&values, 1), Gf2PropagationResult::Idle);
-        // x3 = 1 fuerza x4 = 1; se encuentra aunque la fila 0 no diga nada.
-        assert_eq!(
-            gf2.propagate_trail(&assignment(5, &[(3, true)]), 0),
-            Gf2PropagationResult::Unit { row: 1, variable: 4, value: true },
-        );
-        // Fila completa con la paridad equivocada: conflicto. Con la correcta, silencio.
-        let wrong = assignment(5, &[(0, true), (1, true), (2, false)]);
-        assert_eq!(gf2.propagate_trail(&wrong, 0), Gf2PropagationResult::Conflict { row: 0 });
-        let right = assignment(5, &[(0, true), (1, true), (2, true), (3, false), (4, false)]);
-        assert_eq!(gf2.propagate_trail(&right, 0), Gf2PropagationResult::Idle);
-        // Evaluar no cambia la matriz.
+        assert_eq!(gf2.watched_by_row, vec![[0, 1], [3, 4]]);
+        let mut engine = Mini::new(5);
+        assert_eq!(engine.settle(&mut gf2), Ok(0));
+        // x0 era vigilada: al asignarse, la fila pasa a vigilar x2 y no dice nada.
+        engine.decide(0, true);
+        assert_eq!(engine.settle(&mut gf2), Ok(0));
+        assert_eq!(gf2.watched_by_row[0], [1, 2]);
+        assert!(gf2.watches[0].is_empty());
+        // x2 = 1 no tiene sustituto: fuerza x1 = 1 ^ 1 ^ 1 = 1.
+        engine.decide(2, true);
+        assert_eq!(engine.settle(&mut gf2), Ok(1));
+        assert_eq!(engine.value(1), 1);
+        // Retroceder no toca la vigilancia y la fila vuelve a responder.
+        engine.backjump(1);
+        assert_eq!(engine.settle(&mut gf2), Ok(0));
+        engine.decide(1, false);
+        assert_eq!(engine.settle(&mut gf2), Ok(1));
+        assert_eq!(engine.value(2), -1);
+        engine.decide(3, true);
+        assert_eq!(engine.settle(&mut gf2), Ok(1));
+        assert_eq!(engine.value(4), 1);
+        // Las clausulas asignan toda una fila dentro de un mismo punto fijo: conflicto.
+        engine.backjump(0);
+        engine.decide(0, true);
+        engine.assign(1, true);
+        engine.assign(2, false);
+        assert_eq!(engine.settle(&mut gf2), Err(0));
+        // Nada de esto cambia la matriz.
         assert_eq!(gf2.row(0), (vec![10, 11, 12], true));
+    }
+
+    #[test]
+    fn single_variable_rows_are_root_units() {
+        // x5 = 1 queda como fila de una variable; x6 ^ x7 = 1 se vigila con normalidad.
+        let system = |gf2: &mut Gf2Propagator| {
+            gf2.add_xor(&[5], true);
+            gf2.add_xor(&[6, 7], true);
+            assert_eq!(gf2.eliminate(), Gf2Outcome::Consistent { rank: 2 });
+            gf2.bind(3, |id| id - 5);
+        };
+        let mut gf2 = Gf2Propagator::new(true);
+        system(&mut gf2);
+        let mut engine = Mini::new(3);
+        assert_eq!(engine.settle(&mut gf2), Ok(1));
+        assert_eq!(engine.value(0), 1);
+        engine.decide(1, false);
+        assert_eq!(engine.settle(&mut gf2), Ok(1));
+        assert_eq!(engine.value(2), 1);
+        // Si la raiz ya dice lo contrario, es un conflicto.
+        let mut gf2 = Gf2Propagator::new(true);
+        system(&mut gf2);
+        let mut engine = Mini::new(3);
+        engine.assign(0, false);
+        assert_eq!(engine.settle(&mut gf2), Err(0));
+    }
+
+    #[test]
+    fn watching_never_misses_what_a_full_scan_would_find() {
+        // Paseos aleatorios con decisiones, lotes de asignaciones como los de las clausulas
+        // y retrocesos: en cada punto fijo, un recorrido completo no debe encontrar nada.
+        let mut seed = 0xc2b2_ae3d_27d4_eb4f;
+        let (mut forced, mut conflicts, mut points) = (0, 0, 0);
+        for _ in 0..300 {
+            let variables = 4 + (next(&mut seed) % 10) as u32;
+            let mut gf2 = Gf2Propagator::new(true);
+            for _ in 0..1 + next(&mut seed) % u64::from(variables) {
+                let row: Vec<u32> = (0..1 + next(&mut seed) % 5).map(|_| 1 + (next(&mut seed) % u64::from(variables)) as u32).collect();
+                gf2.add_xor(&row, next(&mut seed) & 1 == 1);
+            }
+            if gf2.eliminate() == Gf2Outcome::Contradiction {
+                continue;
+            }
+            gf2.bind(variables as usize, |id| id - 1);
+            let mut engine = Mini::new(variables as usize);
+            for _ in 0..120 {
+                match engine.settle(&mut gf2) {
+                    Ok(count) => {
+                        forced += count;
+                        points += 1;
+                        assert_eq!(scan(&gf2, &engine.values), (Vec::new(), Vec::new()), "trail {:?}", engine.trail);
+                    }
+                    Err(row) => {
+                        conflicts += 1;
+                        assert!(scan(&gf2, &engine.values).1.contains(&row));
+                        // Un conflicto en la raiz no tiene arreglo: se acaba el paseo.
+                        if engine.limits.is_empty() {
+                            break;
+                        }
+                        let level = (next(&mut seed) % engine.limits.len() as u64) as usize;
+                        engine.backjump(level);
+                        continue;
+                    }
+                }
+                let free: Vec<u32> = (0..variables).filter(|&variable| engine.value(variable) == 0).collect();
+                if free.is_empty() || next(&mut seed) % 4 == 0 {
+                    if engine.limits.is_empty() {
+                        if free.is_empty() {
+                            break;
+                        }
+                    } else {
+                        let level = (next(&mut seed) % engine.limits.len() as u64) as usize;
+                        engine.backjump(level);
+                        continue;
+                    }
+                }
+                // Una decision y, a veces, mas asignaciones del mismo nivel antes de mirar.
+                fn pick(engine: &Mini, variables: u32, seed: &mut u64) -> Option<u32> {
+                    let free: Vec<u32> = (0..variables).filter(|&variable| engine.value(variable) == 0).collect();
+                    free.get((next(seed) % free.len().max(1) as u64) as usize).copied()
+                }
+                let Some(variable) = pick(&engine, variables, &mut seed) else { continue };
+                engine.decide(variable, next(&mut seed) & 1 == 1);
+                for _ in 0..next(&mut seed) % 3 {
+                    if let Some(variable) = pick(&engine, variables, &mut seed) {
+                        engine.assign(variable, next(&mut seed) & 1 == 1);
+                    }
+                }
+                // Las clausulas tambien encuentran conflictos antes de que se mire aqui.
+                if next(&mut seed) % 6 == 0 {
+                    let level = (next(&mut seed) % engine.limits.len() as u64) as usize;
+                    engine.backjump(level);
+                }
+            }
+        }
+        assert!(forced > 500 && conflicts > 100 && points > 3000, "{forced} forced, {conflicts} conflicts, {points} points");
     }
 
     #[test]
@@ -2983,8 +3243,9 @@ struct State {
     propagated: u64,
     reignition_mark: u64,
     root_unsat: bool,
-    // Ecuaciones XOR reducidas, compartidas entre los workers; `None` es el motor clasico.
-    gf2: Option<Arc<Gf2Propagator>>,
+    // Ecuaciones XOR reducidas con su vigilancia, propia de cada worker; `None` es el motor
+    // clasico.
+    gf2: Option<Box<Gf2Propagator>>,
     stats: SolveStats,
 }
 impl State {
@@ -3093,8 +3354,8 @@ impl State {
                 return Some(conflict);
             }
             // Sin ecuaciones, que es el motor clasico, esto es una comparacion por punto fijo.
-            let Some(gf2) = self.gf2.take() else { return None };
-            let step = self.propagate_equations(&gf2);
+            let Some(mut gf2) = self.gf2.take() else { return None };
+            let step = self.propagate_equations(&mut gf2);
             self.gf2 = Some(gf2);
             match step {
                 Ok(true) => continue,
@@ -3103,23 +3364,22 @@ impl State {
             }
         }
     }
-    // Evalua cada fila reducida bajo la asignacion actual; la matriz no cambia. Una fila que
-    // fuerza o contradice se materializa como la clausula que lo justifica hoy, y desde ahi
-    // vigilancia, analisis y borrado son los de cualquier clausula aprendida. Esa clausula
-    // es consecuencia de la formula porque la fila lo es. `Ok(true)` si se asigno algo.
-    fn propagate_equations(&mut self, gf2: &Gf2Propagator) -> Result<bool, Conflict> {
+    // Da a las ecuaciones lo asignado desde su ultima llamada; la matriz no cambia. Una fila
+    // que fuerza o contradice se materializa como la clausula que lo justifica hoy, y desde
+    // ahi vigilancia, analisis y borrado son los de cualquier clausula aprendida. Esa
+    // clausula es consecuencia de la formula porque la fila lo es. `Ok(true)` si se asigno algo.
+    fn propagate_equations(&mut self, gf2: &mut Gf2Propagator) -> Result<bool, Conflict> {
         let mut forced = false;
-        let mut row = 0;
         loop {
-            match gf2.propagate_trail(&self.values, row) {
+            let level_start = self.trail_limits.last().copied().unwrap_or(0);
+            match gf2.propagate_trail(&self.values, &self.trail, self.level(), level_start) {
                 Gf2PropagationResult::Idle => return Ok(forced),
-                Gf2PropagationResult::Unit { row: found, variable, value } => {
-                    self.imply(gf2.bound_row(found), (variable << 1) | u32::from(!value));
+                Gf2PropagationResult::Unit { row, variable, value } => {
+                    self.imply(gf2.bound_row(row), (variable << 1) | u32::from(!value));
                     forced = true;
-                    row = found + 1;
                 }
-                Gf2PropagationResult::Conflict { row: found } => {
-                    return Err(self.contradict(gf2.bound_row(found)));
+                Gf2PropagationResult::Conflict { row } => {
+                    return Err(self.contradict(gf2.bound_row(row)));
                 }
             }
         }
@@ -3780,9 +4040,11 @@ fn external(variables: &[u32], clause: &[u32], line: &mut Vec<i32>) {
 // Enlaza las ecuaciones reducidas con los indices de variable de este estado.
 fn attach_equations(state: &mut State, variables: &[u32], gf2: Option<Gf2Propagator>) {
     let Some(mut gf2) = gf2 else { return };
-    gf2.bind(|id| variables.binary_search(&id).expect("Equation variables occur in the formula") as u32);
+    gf2.bind(variables.len(), |id| {
+        variables.binary_search(&id).expect("Equation variables occur in the formula") as u32
+    });
     if gf2.bound_rows() > 0 {
-        state.gf2 = Some(Arc::new(gf2));
+        state.gf2 = Some(Box::new(gf2));
     }
 }
 pub fn solve_cdcl(formula: &[Vec<i32>]) -> (Option<Vec<i32>>, SolveStats) {
@@ -4465,9 +4727,15 @@ pub fn load_equations(formula: &[Clause], enabled: bool) -> (gf2::Gf2Propagator,
 // Son consecuencia de la formula original, luego tambien de la extendida por las otras
 // capas. Un sistema lineal contradictorio se responde sin buscar. No deja traza.
 pub fn solve_hybrid_gf2(formula: &[Clause], config: HybridConfig) -> HybridReport {
+    solve_hybrid_with_equations(formula, config, load_equations(formula, true).0)
+}
+
+// Como `solve_hybrid_gf2`, con el sistema ya cargado y reducido por `load_equations`.
+pub fn solve_hybrid_with_equations(
+    formula: &[Clause], config: HybridConfig, equations: gf2::Gf2Propagator,
+) -> HybridReport {
     use std::time::Instant;
-    let (equations, outcome) = load_equations(formula, true);
-    if outcome == gf2::Gf2Outcome::Contradiction {
+    if equations.is_contradictory() {
         return HybridReport {
             model: None, symmetry: SymmetryStats::default(), parity: ParityStats::default(),
             cdcl: SolveStats { conflicts: 1, ..SolveStats::default() }, cdcl_ms: 0.0,
@@ -4489,11 +4757,17 @@ pub fn solve_hybrid_gf2(formula: &[Clause], config: HybridConfig) -> HybridRepor
 
 // Como `solve_hybrid_parallel`, con las ecuaciones XOR evaluadas por todos los workers.
 pub fn solve_hybrid_parallel_gf2(
-    formula: &[Clause], config: HybridConfig, mut swarm: cdcl::SwarmConfig,
+    formula: &[Clause], config: HybridConfig, swarm: cdcl::SwarmConfig,
+) -> ParallelHybridReport {
+    solve_hybrid_parallel_with_equations(formula, config, swarm, load_equations(formula, true).0)
+}
+
+// Como `solve_hybrid_parallel_gf2`, con el sistema ya cargado y reducido.
+pub fn solve_hybrid_parallel_with_equations(
+    formula: &[Clause], config: HybridConfig, mut swarm: cdcl::SwarmConfig, equations: gf2::Gf2Propagator,
 ) -> ParallelHybridReport {
     use std::time::Instant;
-    let (equations, outcome) = load_equations(formula, true);
-    if outcome == gf2::Gf2Outcome::Contradiction {
+    if equations.is_contradictory() {
         let mut stats = cdcl::SwarmStats::default();
         stats.total.conflicts = 1;
         return ParallelHybridReport {
