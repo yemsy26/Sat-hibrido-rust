@@ -5,9 +5,12 @@
 #[path = "../src/hybrid.rs"]
 mod hybrid;
 
-use hybrid::cdcl::{solve_swarm, OracleConfig, ReignitionConfig, SwarmConfig, SwarmStats};
-use hybrid::{solve_hybrid_parallel, HybridConfig};
+use hybrid::cdcl::{
+    solve_swarm, solve_swarm_with_progress, OracleConfig, ReignitionConfig, SwarmConfig, SwarmProgress, SwarmStats,
+};
+use hybrid::{solve_hybrid_parallel, solve_hybrid_parallel_with_progress, HybridConfig};
 use std::collections::{BTreeMap, BTreeSet};
+use std::sync::atomic::Ordering;
 
 const FLIPS_PER_VARIABLE: usize = 1;
 
@@ -457,4 +460,80 @@ fn persistent_single_worker_keeps_learning_sound_across_multiple_cubes() {
     assert_eq!(stats.cubes_started, stats.cubes_generated);
     assert_eq!(stats.cubes_unsat, stats.cubes_generated);
     check_counters(&unsatisfiable, &stats, false, 1);
+}
+
+// What an observer sees once the swarm is done: the three counters against the report.
+fn assert_progress_matches(progress: &SwarmProgress, stats: &SwarmStats) {
+    assert_eq!(progress.cubes_total.load(Ordering::Relaxed), stats.cubes_generated as u64);
+    assert_eq!(progress.cubes_closed.load(Ordering::Relaxed), stats.cubes_unsat as u64);
+    assert_eq!(progress.conflicts.load(Ordering::Relaxed), stats.total.conflicts as u64);
+}
+
+#[test]
+fn progress_counters_end_at_the_totals_of_the_report() {
+    // UNSAT: every cube ends closed and every conflict of every cube has been published.
+    let formula = pigeonhole(6, 5);
+    for workers in [1, 2, 4] {
+        for sharing in [false, true] {
+            let progress = SwarmProgress::default();
+            let (model, stats) = solve_swarm_with_progress(&formula, config(workers, sharing), Some(&progress));
+            assert!(model.is_none());
+            check_counters(&formula, &stats, false, workers);
+            assert!(stats.cubes_generated > 1);
+            assert_progress_matches(&progress, &stats);
+        }
+    }
+    // One worker on a single cube: more conflicts than a batch, so most of them were
+    // published in the middle of the search and only the rest when the cube was dropped.
+    let mut parameters = config_without_oracle(1, false);
+    parameters.cubes_per_worker = 1;
+    let progress = SwarmProgress::default();
+    let (model, stats) = solve_swarm_with_progress(&formula, parameters, Some(&progress));
+    assert!(model.is_none());
+    assert_eq!(stats.cubes_generated, 1);
+    assert!(stats.total.conflicts > 64, "{} conflicts", stats.total.conflicts);
+    assert_progress_matches(&progress, &stats);
+    // SAT: the cubes that lose the race are cancelled, and what they counted is published too.
+    let formula = unique_model_without_units(6, 0b000000);
+    let mut parameters = config_without_oracle(4, true);
+    parameters.cubes_per_worker = 8;
+    let progress = SwarmProgress::default();
+    let (model, stats) = solve_swarm_with_progress(&formula, parameters, Some(&progress));
+    check_model(&formula, &model.unwrap());
+    check_counters(&formula, &stats, true, 4);
+    assert_progress_matches(&progress, &stats);
+}
+
+#[test]
+fn an_observer_does_not_change_the_search() {
+    // A single worker is deterministic: with and without an observer it does the same.
+    let counters = |stats: &SwarmStats| {
+        let total = &stats.total;
+        (stats.cubes_generated, stats.cubes_started, stats.cubes_unsat, total.decisions, total.propagations,
+            total.conflicts, total.restarts, total.learned_clauses, total.reignitions)
+    };
+    for formula in [pigeonhole(6, 5), unique_model_without_units(6, 0b000000)] {
+        for oracle in [false, true] {
+            let mut parameters = if oracle { config(1, true) } else { config_without_oracle(1, true) };
+            parameters.cubes_per_worker = 8;
+            let (plain_model, plain) = solve_swarm(&formula, parameters);
+            let progress = SwarmProgress::default();
+            let (seen_model, seen) = solve_swarm_with_progress(&formula, parameters, Some(&progress));
+            assert_eq!(plain_model, seen_model);
+            assert_eq!(counters(&plain), counters(&seen));
+        }
+    }
+}
+
+#[test]
+fn the_parallel_pipeline_hands_the_observer_to_the_swarm() {
+    let formula = pigeonhole(6, 5);
+    let parameters = HybridConfig { symmetry: false, ..HybridConfig::default() };
+    let progress = SwarmProgress::default();
+    let report = solve_hybrid_parallel_with_progress(&formula, parameters, config(2, true), Some(&progress));
+    assert!(report.model.is_none());
+    assert!(report.swarm.workers > 0);
+    assert_progress_matches(&progress, &report.swarm);
+    // Without an observer the entry point is the one it always was.
+    assert!(solve_hybrid_parallel(&formula, parameters, config(2, true)).model.is_none());
 }

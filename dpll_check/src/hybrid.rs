@@ -138,7 +138,15 @@ fn restrict(model: Option<Vec<i32>>, formula: &[Clause], parity: &ParityStats) -
 }
 
 pub fn solve_hybrid_parallel(
+    formula: &[Clause], config: HybridConfig, swarm: cdcl::SwarmConfig,
+) -> ParallelHybridReport {
+    solve_hybrid_parallel_with_progress(formula, config, swarm, None)
+}
+
+// El mismo recorrido, con un observador que puede leer el avance del enjambre mientras busca.
+pub fn solve_hybrid_parallel_with_progress(
     formula: &[Clause], config: HybridConfig, mut swarm: cdcl::SwarmConfig,
+    progress: Option<&cdcl::SwarmProgress>,
 ) -> ParallelHybridReport {
     use std::time::Instant;
     swarm.reignition = cdcl::ReignitionConfig {
@@ -146,7 +154,7 @@ pub fn solve_hybrid_parallel(
     };
     let (extended, symmetry, parity) = preprocess(formula, config, None);
     let start = Instant::now();
-    let (model, swarm) = cdcl::solve_swarm(&extended, swarm);
+    let (model, swarm) = cdcl::solve_swarm_with_progress(&extended, swarm, progress);
     let conquer_ms = start.elapsed().as_secs_f64() * 1000.0;
     let model = restrict(model, formula, &parity);
     if let Some(model) = &model { assert!(verify_model(formula, model)); }

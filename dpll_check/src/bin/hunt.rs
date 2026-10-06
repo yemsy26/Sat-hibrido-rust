@@ -20,8 +20,9 @@
 //     --heartbeat S       linea de progreso en stderr cada S segundos
 //     --csv ETIQUETA      una fila CSV en la salida estandar (`hunt --header` da la cabecera)
 //
-// El motor no tiene puntos de control ni contadores visibles mientras busca: el unico
-// progreso observable desde fuera es el crecimiento de la traza.
+// El motor no tiene puntos de control. En serie, el unico progreso observable desde fuera
+// es el crecimiento de la traza. El enjambre publica sus conflictos y cubos cerrados: con
+// --heartbeat o --timeout sale una linea `c status:` en cada latido y otra al agotar el limite.
 #![forbid(unsafe_code)]
 #![deny(warnings)]
 
@@ -36,9 +37,11 @@ mod symmetry_breaker;
 #[path = "../ramsey_symmetry.rs"]
 mod ramsey_symmetry;
 
-use hybrid::cdcl::SwarmConfig;
+use hybrid::cdcl::{SwarmConfig, SwarmProgress};
 use hybrid::proof::PbProof;
-use hybrid::{solve_hybrid, solve_hybrid_parallel, solve_hybrid_with_proof, verify_model, HybridConfig, SolveStats};
+use hybrid::{
+    solve_hybrid, solve_hybrid_parallel_with_progress, solve_hybrid_with_proof, verify_model, HybridConfig, SolveStats,
+};
 use std::fs::File;
 use std::io::{self, Write};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -219,6 +222,16 @@ fn row(prefix: &str, status: &str, total_ms: f64, parse_ms: f64, outcome: Option
     )
 }
 
+// Linea de estado del enjambre. `last` es el instante y los conflictos de la linea anterior:
+// el ritmo es el de ese tramo, no la media desde el arranque.
+fn status_line(elapsed: Duration, conflicts: u64, last: (Duration, u64), closed: u64, total: u64) -> String {
+    let span = elapsed.saturating_sub(last.0).as_secs_f64();
+    let rate = if span > 0.0 { conflicts.saturating_sub(last.1) as f64 / span } else { 0.0 };
+    // Antes de cubicar (capas previas e ignicion del oraculo) no hay cubos que contar.
+    let cubes = if total == 0 { "sin cubos todavia".to_owned() } else { format!("cubos cerrados {closed}/{total}") };
+    format!("c status: t={}s, {conflicts} conflictos, {rate:.0} conflictos/s, {cubes}", elapsed.as_secs())
+}
+
 // Las dos capas previas a la busqueda, cada una sobre la formula original.
 fn preprocess(
     options: &Options, formula: &Formula, prefix: &str, parse_ms: f64, started: Instant, gauge: &Arc<Gauge>,
@@ -313,15 +326,24 @@ fn run(options: &Options) -> Result<i32, String> {
 
     // Vigilante: progreso y limite de tiempo, sin tocar el motor.
     let gauge = Arc::new(Gauge::default());
+    // Avance del enjambre: solo se le pide al motor si hay latido o limite que lo vayan a
+    // mostrar. Sin ellos el enjambre corre sin observador, como siempre.
+    let progress = (mode == "swarm" && (options.heartbeat.is_some() || options.timeout.is_some()))
+        .then(|| Arc::new(SwarmProgress::default()));
     {
         let (gauge, prefix, csv) = (Arc::clone(&gauge), prefix.clone(), options.csv.is_some());
         let (timeout, heartbeat) = (options.timeout, options.heartbeat);
+        let progress = progress.clone();
         std::thread::spawn(move || {
             let mut next = heartbeat;
+            // Instante y conflictos de la ultima linea `c status:`.
+            let mut last = (Duration::ZERO, 0);
             loop {
                 std::thread::sleep(Duration::from_millis(100));
                 let elapsed = started.elapsed();
-                if next.is_some_and(|due| elapsed.as_secs() >= due) {
+                let beat = next.is_some_and(|due| elapsed.as_secs() >= due);
+                let expired = timeout.is_some_and(|limit| elapsed.as_secs() >= limit);
+                if beat {
                     eprintln!(
                         "c t={}s traza={} bytes, {} lineas{}", elapsed.as_secs(),
                         gauge.bytes.load(Ordering::Relaxed), gauge.lines.load(Ordering::Relaxed),
@@ -329,7 +351,17 @@ fn run(options: &Options) -> Result<i32, String> {
                     );
                     next = next.zip(heartbeat).map(|(due, step)| due + step);
                 }
-                if timeout.is_some_and(|limit| elapsed.as_secs() >= limit) {
+                // En cada latido y al agotar el limite: sin resultado no habra contadores
+                // finales, y esta linea es lo unico que queda de la busqueda.
+                if let Some(progress) = progress.as_deref().filter(|_| beat || expired) {
+                    let conflicts = progress.conflicts.load(Ordering::Relaxed);
+                    eprintln!("{}", status_line(
+                        elapsed, conflicts, last,
+                        progress.cubes_closed.load(Ordering::Relaxed), progress.cubes_total.load(Ordering::Relaxed),
+                    ));
+                    last = (elapsed, conflicts);
+                }
+                if expired {
                     if csv {
                         println!("{}", row(&prefix, "TIMEOUT", elapsed.as_secs_f64() * 1000.0, parse_ms, None, &gauge));
                     }
@@ -347,7 +379,7 @@ fn run(options: &Options) -> Result<i32, String> {
         let swarm = SwarmConfig {
             workers, cubes_per_worker: options.cubes, share_enabled: options.share, ..SwarmConfig::default()
         };
-        let report = solve_hybrid_parallel(&formula, config, swarm);
+        let report = solve_hybrid_parallel_with_progress(&formula, config, swarm, progress.as_deref());
         let stats = &report.swarm;
         Outcome {
             model: report.model, symmetry: report.symmetry, parity: report.parity, search: stats.total,
@@ -479,6 +511,23 @@ p cnf 3 3
         assert!(parse_options(&arguments).is_err());
         let options = parse_options(&arguments[..3]).unwrap();
         assert_eq!((options.workers, options.flips, options.interval), (Some(4), 16, 500));
+    }
+
+    #[test]
+    fn the_status_line_gives_the_rate_since_the_previous_one() {
+        let seconds = Duration::from_secs;
+        // 90 000 conflictos en los 30 s desde la linea anterior, no 120 000 en 60 s.
+        assert_eq!(
+            status_line(seconds(60), 120_000, (seconds(30), 30_000), 3, 64),
+            "c status: t=60s, 120000 conflictos, 3000 conflictos/s, cubos cerrados 3/64",
+        );
+        // Primera linea, antes de que el enjambre haya generado los cubos.
+        assert_eq!(
+            status_line(seconds(30), 0, (Duration::ZERO, 0), 0, 0),
+            "c status: t=30s, 0 conflictos, 0 conflictos/s, sin cubos todavia",
+        );
+        // Dos lineas en el mismo instante no dividen por cero.
+        assert!(status_line(seconds(30), 500, (seconds(30), 400), 0, 16).contains(", 0 conflictos/s, "));
     }
 
     #[test]

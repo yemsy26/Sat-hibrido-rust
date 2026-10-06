@@ -22,9 +22,9 @@
 #                 1 s; el resto se atasca mas de 30 s entre el 35 y el 50 % de las veces).
 #   simetria      activa: en N = 42 descubre un solo generador (40 predicados) en 1.6 s.
 #
-# Memoria: unos 0.4 GB por hilo (5.4 GB con 15 workers en N = 42). Progreso: enjambre.log y notario.log, una linea cada
-# HEARTBEAT segundos; el motor no expone contadores mientras busca, asi que lo unico que
-# se mueve es el tamano de la traza del notario.
+# Memoria: unos 0.4 GB por hilo (5.4 GB con 15 workers en N = 42). Progreso: enjambre.log y notario.log, cada
+# HEARTBEAT segundos. El enjambre da sus conflictos, su ritmo y los cubos cerrados en una
+# linea `c status:`; del notario solo se ve crecer la traza.
 #
 # Codigo de salida: 10 coloracion encontrada, 20 UNSAT (certificado o no, segun run.log),
 # 1 error o interrupcion.

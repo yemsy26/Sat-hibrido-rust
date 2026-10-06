@@ -1,6 +1,6 @@
 use std::collections::{HashSet, VecDeque};
 use super::proof::ProofLog;
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 pub type Clause = Vec<i32>;
@@ -102,6 +102,33 @@ pub struct SwarmStats {
     pub total: SolveStats,
     // Snapshot auditable: IDs originales; nunca contiene cláusulas vacías.
     pub shared_clauses: Vec<Vec<i32>>,
+}
+// Telemetría del enjambre: lo que un observador externo puede leer mientras dura la búsqueda.
+// Los workers solo suman, sin orden entre ellos ni con el lector, y la búsqueda nunca lee
+// estos contadores. A mitad de búsqueda `conflicts` puede ir hasta PROGRESS_BATCH - 1 por
+// detrás de cada worker; al terminar es la suma exacta de los conflictos de todos los cubos.
+#[derive(Debug, Default)]
+pub struct SwarmProgress {
+    pub conflicts: AtomicU64,
+    pub cubes_total: AtomicU64,
+    pub cubes_closed: AtomicU64,
+}
+// Un worker publica sus conflictos por lotes: una escritura atómica cada PROGRESS_BATCH
+// conflictos, para no disputarse la línea de caché del contador en cada uno.
+const PROGRESS_BATCH: usize = 64;
+struct Beacon<'a> {
+    progress: &'a SwarmProgress,
+    // Conflictos del cubo en curso ya sumados al contador común.
+    published: usize,
+}
+impl Beacon<'_> {
+    fn publish(&mut self, conflicts: usize, flush: bool) {
+        let pending = conflicts - self.published;
+        if pending >= PROGRESS_BATCH || (flush && pending != 0) {
+            self.progress.conflicts.fetch_add(pending as u64, Ordering::Relaxed);
+            self.published = conflicts;
+        }
+    }
 }
 // Solo se exportan cláusulas glue; una importada entra con LBD 3 y debe ganarse la permanencia.
 const EXPORT_LBD: u32 = 2;
@@ -254,6 +281,8 @@ struct SearchControl<'a, 'p> {
     sharing: Option<&'a mut Sharing<'p>>,
     // Traza DRAT de la búsqueda en serie; el enjambre no la emite.
     proof: Option<&'a mut dyn ProofLog>,
+    // Telemetría del enjambre; sin observador no se publica nada.
+    progress: Option<Beacon<'a>>,
 }
 // Pesos enteros de probSAT, 2^16 * 2.06^(-roturas): cuanto más rompe un flip, menos probable.
 const BREAK_WEIGHTS: [u64; 16] =
@@ -1382,7 +1411,7 @@ fn solve_cdcl_inner(
     let Some((mut state, variables)) = prepared else {
         return (None, SolveStats { conflicts: 1, ..SolveStats::default() });
     };
-    let control = SearchControl { cube: &[], cancel: None, sharing: None, proof };
+    let control = SearchControl { cube: &[], cancel: None, sharing: None, proof, progress: None };
     let (outcome, stats) = run_state(&mut state, &variables, feedback, control);
     match outcome {
         SearchOutcome::Sat(model) => (Some(model), stats),
@@ -1405,6 +1434,10 @@ fn run_state(
     mut control: SearchControl<'_, '_>,
 ) -> (SearchOutcome, SolveStats) {
     let outcome = search(state, variables, feedback, &mut control);
+    if let Some(beacon) = control.progress.as_mut() {
+        // Lo que no llenó un lote sale al soltar el cubo: el total queda exacto.
+        beacon.publish(state.stats.conflicts, true);
+    }
     if let Some(link) = control.sharing {
         // Lo aprendido en este cubo se publica entero antes de soltar el estado.
         link.flush(&mut state.stats, true);
@@ -1450,6 +1483,9 @@ fn search(
         }
         if let Some(conflict) = state.propagate() {
             state.stats.conflicts += 1;
+            if let Some(beacon) = control.progress.as_mut() {
+                beacon.publish(state.stats.conflicts, false);
+            }
             let level = state.level();
             if level == 0 {
                 // No se publica la cláusula vacía ni se confunde cancelación con UNSAT.
@@ -1567,6 +1603,7 @@ fn swarm_worker(
     pool: &CloudPool,
     config: SwarmConfig,
     owner: u32,
+    progress: Option<&SwarmProgress>,
 ) -> WorkerReport {
     let mut report = WorkerReport::default();
     let mut state = base.clone();
@@ -1590,7 +1627,10 @@ fn swarm_worker(
         }
         // Clausulas, unidades raiz, fases, actividades y oraculo sobreviven al cubo.
         state.stats = SolveStats::default();
-        let control = SearchControl { cube, cancel: Some(cancel), sharing: link.as_mut(), proof: None };
+        let control = SearchControl {
+            cube, cancel: Some(cancel), sharing: link.as_mut(), proof: None,
+            progress: progress.map(|progress| Beacon { progress, published: 0 }),
+        };
         let (outcome, stats) = run_state(&mut state, variables, feedback, control);
         report.total.add_search(stats);
         match outcome {
@@ -1600,13 +1640,25 @@ fn swarm_worker(
                 } else { report.cancelled += 1; }
                 break;
             }
-            SearchOutcome::Unsat => report.unsat += 1,
+            SearchOutcome::Unsat => {
+                report.unsat += 1;
+                if let Some(progress) = progress {
+                    progress.cubes_closed.fetch_add(1, Ordering::Relaxed);
+                }
+            }
             SearchOutcome::Cancelled => { report.cancelled += 1; break; }
         }
     }
     report
 }
 pub fn solve_swarm(formula: &[Vec<i32>], config: SwarmConfig) -> (Option<Vec<i32>>, SwarmStats) {
+    solve_swarm_with_progress(formula, config, None)
+}
+// El mismo enjambre, publicando su avance en `progress` si alguien lo mira. Con observador o
+// sin él la búsqueda hace exactamente lo mismo.
+pub fn solve_swarm_with_progress(
+    formula: &[Vec<i32>], config: SwarmConfig, progress: Option<&SwarmProgress>,
+) -> (Option<Vec<i32>>, SwarmStats) {
     let mut stats = SwarmStats::default();
     let feedback = active(Some(config.reignition));
     let prepared = prepare_formula(formula, feedback.map(|configuration| configuration.oracle));
@@ -1636,6 +1688,9 @@ pub fn solve_swarm(formula: &[Vec<i32>], config: SwarmConfig) -> (Option<Vec<i32
     stats.total = base.stats;
     let cubes = make_cubes(&base, config);
     stats.cubes_generated = cubes.len();
+    if let Some(progress) = progress {
+        progress.cubes_total.store(cubes.len() as u64, Ordering::Relaxed);
+    }
     let workers = config.workers.max(1).min(cubes.len());
     let next = AtomicUsize::new(0);
     let cancel = AtomicBool::new(false);
@@ -1647,7 +1702,7 @@ pub fn solve_swarm(formula: &[Vec<i32>], config: SwarmConfig) -> (Option<Vec<i32
             let (base, variables, cubes, next, cancel, pool) =
                 (&base, variables.as_slice(), cubes.as_slice(), &next, &cancel, &pool);
             let worker = move || swarm_worker(base, variables, cubes,
-                next, cancel, pool, config, owner as u32);
+                next, cancel, pool, config, owner as u32, progress);
             match std::thread::Builder::new().name(format!("swarm-{owner}"))
                 .spawn_scoped(scope, worker) {
                 Ok(handle) => handles.push(handle),
@@ -1656,7 +1711,7 @@ pub fn solve_swarm(formula: &[Vec<i32>], config: SwarmConfig) -> (Option<Vec<i32
         }
         if handles.is_empty() {
             return (0, vec![swarm_worker(&base, &variables, &cubes,
-                &next, &cancel, &pool, config, 0)]);
+                &next, &cancel, &pool, config, 0, progress)]);
         }
         let spawned = handles.len();
         let reports = handles.into_iter().map(|handle| handle.join().expect("SAT worker panicked"))
@@ -1684,6 +1739,26 @@ mod deterministic_import_tests {
     use super::*;
 
     #[test]
+    fn beacon_publishes_whole_batches_and_the_remainder_only_on_flush() {
+        let progress = SwarmProgress::default();
+        let mut beacon = Beacon { progress: &progress, published: 0 };
+        let read = || progress.conflicts.load(Ordering::Relaxed);
+        for conflicts in 1..PROGRESS_BATCH {
+            beacon.publish(conflicts, false);
+        }
+        assert_eq!(read(), 0);
+        beacon.publish(PROGRESS_BATCH, false);
+        assert_eq!(read(), PROGRESS_BATCH as u64);
+        beacon.publish(PROGRESS_BATCH + 5, false);
+        assert_eq!(read(), PROGRESS_BATCH as u64);
+        beacon.publish(PROGRESS_BATCH + 5, true);
+        assert_eq!(read(), PROGRESS_BATCH as u64 + 5);
+        // Nada pendiente: vaciar otra vez no suma.
+        beacon.publish(PROGRESS_BATCH + 5, true);
+        assert_eq!(read(), PROGRESS_BATCH as u64 + 5);
+    }
+
+    #[test]
     fn published_consequence_is_imported_and_promoted_to_root() {
         // (x1 OR x2) AND (x1 OR !x2) entails x1 without a syntactic unit.
         let formula = vec![vec![1, 2], vec![1, -2]];
@@ -1708,7 +1783,7 @@ mod deterministic_import_tests {
         }
 
         let mut link = Sharing::new(&pool, 0, 1);
-        let control = SearchControl { cube: &[], cancel: None, sharing: Some(&mut link), proof: None };
+        let control = SearchControl { cube: &[], cancel: None, sharing: Some(&mut link), proof: None, progress: None };
         let (outcome, stats) = run_state(&mut state, &variables, None, control);
         let model = match outcome {
             SearchOutcome::Sat(model) => model,
@@ -1725,7 +1800,7 @@ mod deterministic_import_tests {
         // Siguiente cubo del mismo worker: cursor y filtro sobreviven, nada se reimporta.
         state.backjump(0);
         state.stats = SolveStats::default();
-        let control = SearchControl { cube: &[], cancel: None, sharing: Some(&mut link), proof: None };
+        let control = SearchControl { cube: &[], cancel: None, sharing: Some(&mut link), proof: None, progress: None };
         let (_, stats) = run_state(&mut state, &variables, None, control);
         assert_eq!(stats.imported_clauses, 0);
         // Un lote nunca vuelve a su autor.
