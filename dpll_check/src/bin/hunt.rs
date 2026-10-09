@@ -4,6 +4,8 @@
 //     --workers K         enjambre de K workers; sin esta opcion, un solo hilo
 //     --cubes C           cubos por worker (4)
 //     --recube-conflicts C cede cubos tras C conflictos y los reenvía a la GPU (opcional)
+//     --recube-split K     fija 2 o 3 variables VSIDS por split (4 u 8 hijos; defecto 3)
+//     --hard-cube F        exporta un trail parcial tras >3 recubings en un linaje
 //     --no-share          enjambre sin intercambio de clausulas
 //     --no-symmetry       sin ruptura de simetrias
 //     --no-parity         sin capa de paridad
@@ -16,6 +18,7 @@
 //     --proof F.pbp       traza VeriPB 3.0; solo en serie: el enjambre no emite traza
 //     --proof-cap-gib G   tope de la traza; superado, la ejecucion sigue SIN certificado
 //     --model F           escribe el modelo si la formula es satisfacible
+//     --deep-trail F      exporta records de asignacion parcial; exige --workers
 //     --preprocess-only   solo las capas de simetria y paridad, sin busqueda
 //     --timeout S         aborta a los S segundos (estado TIMEOUT, codigo 124)
 //     --heartbeat S       linea de progreso en stderr cada S segundos
@@ -76,6 +79,8 @@ struct Options {
     proof: Option<String>,
     cap: u64,
     model: Option<String>,
+    deep_trail: Option<String>,
+    hard_cube: Option<String>,
     preprocess_only: bool,
     timeout: Option<u64>,
     heartbeat: Option<u64>,
@@ -90,9 +95,11 @@ fn parse_options(arguments: &[String]) -> Result<Options, String> {
         input: String::new(), workers: None, cubes: SwarmConfig::default().cubes_per_worker, share: true,
         symmetry: true, parity: true, ramsey_symm: None, flips: defaults.oracle.flips_per_variable,
         interval: defaults.reignition_interval, seed: None, proof: None, cap: u64::MAX, model: None,
+        deep_trail: None, hard_cube: None,
         preprocess_only: false, timeout: None, heartbeat: None, csv: None, use_gpu: false, recube: None,
     };
     let mut index = 0;
+    let mut recube_split = None;
     while index < arguments.len() {
         let flag = arguments[index].as_str();
         index += 1;
@@ -113,6 +120,13 @@ fn parse_options(arguments: &[String]) -> Result<Options, String> {
                     ..hybrid::cdcl::RecubeConfig::default()
                 });
             }
+            "--recube-split" => {
+                let bits = number(value(flag)?)?;
+                if !(2..=3).contains(&bits) {
+                    return Err("--recube-split exige 2 o 3 (4 u 8 sub-cubos)".into());
+                }
+                recube_split = Some(bits as usize);
+            }
             "--no-share" => options.share = false,
             "--no-symmetry" => options.symmetry = false,
             "--no-parity" => options.parity = false,
@@ -125,6 +139,8 @@ fn parse_options(arguments: &[String]) -> Result<Options, String> {
             "--proof" => options.proof = Some(value(flag)?),
             "--proof-cap-gib" => options.cap = number(value(flag)?)?.saturating_mul(1 << 30),
             "--model" => options.model = Some(value(flag)?),
+            "--deep-trail" => options.deep_trail = Some(value(flag)?),
+            "--hard-cube" => options.hard_cube = Some(value(flag)?),
             "--preprocess-only" => options.preprocess_only = true,
             "--timeout" => options.timeout = Some(number(value(flag)?)?),
             "--heartbeat" => options.heartbeat = Some(number(value(flag)?)?.max(1)),
@@ -149,6 +165,16 @@ fn parse_options(arguments: &[String]) -> Result<Options, String> {
     }
     if options.recube.is_some() && (options.workers.is_none() || options.preprocess_only) {
         return Err("--recube-conflicts exige --workers y no admite --preprocess-only".into());
+    }
+    if options.deep_trail.is_some() && (options.workers.is_none() || options.preprocess_only) {
+        return Err("--deep-trail exige --workers y no admite --preprocess-only".into());
+    }
+    if let Some(bits) = recube_split {
+        let recube = options.recube.as_mut().ok_or("--recube-split exige --recube-conflicts")?;
+        recube.split_variables = bits;
+    }
+    if options.hard_cube.is_some() && options.recube.is_none() {
+        return Err("--hard-cube exige --recube-conflicts y --workers".into());
     }
     Ok(options)
 }
@@ -511,9 +537,24 @@ fn run(options: &Options) -> Result<i32, String> {
     // Sin GPU, latido ni limite, el enjambre conserva su ruta sin observador.
     let gpu_active = conqueror.is_some();
     let recube_active = options.recube.is_some();
-    let progress = (mode == "swarm"
-        && (options.heartbeat.is_some() || options.timeout.is_some() || gpu_active))
-        .then(|| Arc::new(SwarmProgress::default()));
+    let deep_active = options.deep_trail.is_some();
+    let hard_active = options.hard_cube.is_some();
+    let mut progress_state = (mode == "swarm"
+        && (options.heartbeat.is_some() || options.timeout.is_some() || gpu_active || deep_active || hard_active))
+        .then(SwarmProgress::default);
+    let deep_trail_writer = if let Some(path) = &options.deep_trail {
+        let observer = progress_state.as_mut().expect("deep-trail requires swarm progress");
+        Some(observer.enable_deep_trail(path).map_err(|error| format!("{path}: {error}"))?)
+    } else { None };
+    let hard_cube_writer = if let Some(path) = &options.hard_cube {
+        let observer = progress_state.as_mut().expect("hard-cube requires swarm progress");
+        Some(observer.enable_hard_cube(path).map_err(|error| format!("{path}: {error}"))?)
+    } else { None };
+    if let Some(recube) = &options.recube {
+        eprintln!("c micro-cubing: budget={}, split_variables={}, max_children={}, gc_interval=10000, protected_lbd=4",
+            recube.max_conflicts_per_cube, recube.split_variables, 1usize << recube.split_variables);
+    }
+    let progress = progress_state.map(Arc::new);
     {
         let (gauge, prefix, csv) = (Arc::clone(&gauge), prefix.clone(), options.csv.is_some());
         let (timeout, heartbeat) = (options.timeout, options.heartbeat);
@@ -551,11 +592,18 @@ fn run(options: &Options) -> Result<i32, String> {
                     } else {
                         String::new()
                     };
+                    let depth_suffix = if deep_active {
+                        format!("; deepest_trail={}",
+                            progress.max_trail_depth.load(Ordering::Relaxed))
+                    } else { String::new() };
+                    let hard_suffix = if hard_active {
+                        format!("; hard_cube_queued={}", progress.hard_cube_queued.load(Ordering::Relaxed))
+                    } else { String::new() };
 
                     if gpu_active {
                         let gpu_filtered = progress.gpu_filtered.load(Ordering::Relaxed);
                         eprintln!(
-                            "{}{recube_suffix}; gpu_filtered={gpu_filtered}",
+                            "{}{recube_suffix}{depth_suffix}{hard_suffix}; gpu_filtered={gpu_filtered}",
                             status_line(
                                 elapsed,
                                 conflicts,
@@ -568,7 +616,7 @@ fn run(options: &Options) -> Result<i32, String> {
                         );
                     } else {
                         eprintln!(
-                            "{}{recube_suffix}",
+                            "{}{recube_suffix}{depth_suffix}{hard_suffix}",
                             status_line(
                                 elapsed,
                                 conflicts,
@@ -637,6 +685,9 @@ fn run(options: &Options) -> Result<i32, String> {
             search_ms: report.cdcl_ms, cubes: [0; 4], trace: [0, 0],
         }
     };
+    // El enjambre ya unio sus workers; drenar el ultimo record antes de salir.
+    drop(deep_trail_writer);
+    drop(hard_cube_writer);
     let total_ms = started.elapsed().as_secs_f64() * 1000.0;
     let status = if outcome.model.is_some() { "SAT" } else { "UNSAT" };
     if options.csv.is_some() {
@@ -652,6 +703,10 @@ fn run(options: &Options) -> Result<i32, String> {
             progress.gpu_filtered.load(Ordering::Relaxed)
         });
         eprintln!("c gpu: gpu_filtered={gpu_filtered} cubos refutados por GPU");
+    }
+    if hard_active {
+        eprintln!("c hard-cube: queued={}; archivo parcial, no certificado SAT",
+            progress.as_deref().map_or(0, |p| p.hard_cube_queued.load(Ordering::Relaxed)));
     }
     if options.proof.is_some() {
         eprintln!(
@@ -815,5 +870,59 @@ p cnf 3 3
         assert!(options.symmetry);
         assert!(parse_options(&arguments("f.cnf --ramsey-symm")).is_err());
         assert!(parse_options(&arguments("f.cnf --ramsey-symm 18 --proof p.pbp")).is_err());
+    }
+
+    #[test]
+    fn deep_trail_is_explicit_and_requires_swarm_search() {
+        let args = |text: &str| text.split_whitespace().map(str::to_owned).collect::<Vec<_>>();
+        assert!(parse_options(&args("f.cnf")).unwrap().deep_trail.is_none());
+        let options = parse_options(&args("f.cnf --workers 2 --deep-trail fragmento.sat")).unwrap();
+        assert_eq!(options.deep_trail.as_deref(), Some("fragmento.sat"));
+        assert!(parse_options(&args("f.cnf --deep-trail fragmento.sat")).is_err());
+        assert!(parse_options(&args("f.cnf --workers 2 --deep-trail")).is_err());
+        assert!(parse_options(&args("f.cnf --workers 2 --deep-trail f --preprocess-only")).is_err());
+    }
+
+    #[test]
+    fn micro_cubing_is_explicit_and_independent_of_argument_order() {
+        let args = |text: &str| text.split_whitespace().map(str::to_owned).collect::<Vec<_>>();
+        let plain = parse_options(&args("f.cnf --workers 2")).unwrap();
+        assert!(plain.recube.is_none() && plain.hard_cube.is_none());
+        let defaults = parse_options(&args("f.cnf --workers 2 --recube-conflicts 50000")).unwrap();
+        let config = defaults.recube.unwrap();
+        assert_eq!(config.max_conflicts_per_cube, 50_000);
+        assert_eq!(config.split_variables, 3);
+        assert!(config.heavy_tail_gc);
+        for text in [
+            "f.cnf --workers 2 --recube-split 2 --recube-conflicts 50000",
+            "f.cnf --workers 2 --recube-conflicts 50000 --recube-split 2",
+        ] {
+            let options = parse_options(&args(text)).unwrap();
+            assert_eq!(options.recube.unwrap().split_variables, 2);
+        }
+        for text in [
+            "f.cnf --workers 2 --recube-split 3",
+            "f.cnf --workers 2 --recube-conflicts 50000 --recube-split 0",
+            "f.cnf --workers 2 --recube-conflicts 50000 --recube-split 4",
+            "f.cnf --recube-conflicts 50000",
+            "f.cnf --workers 2 --recube-conflicts 50000 --preprocess-only",
+        ] {
+            assert!(parse_options(&args(text)).is_err(), "{text}");
+        }
+    }
+
+    #[test]
+    fn hard_cube_is_opt_in_and_requires_recubing() {
+        let args = |text: &str| text.split_whitespace().map(str::to_owned).collect::<Vec<_>>();
+        let options = parse_options(&args("f.cnf --workers 2 --recube-conflicts 50000 --hard-cube hard.sat")).unwrap();
+        assert_eq!(options.hard_cube.as_deref(), Some("hard.sat"));
+        assert!(options.deep_trail.is_none());
+        for text in [
+            "f.cnf --workers 2 --hard-cube hard.sat",
+            "f.cnf --hard-cube hard.sat --recube-conflicts 50000",
+            "f.cnf --workers 2 --recube-conflicts 50000 --hard-cube",
+        ] {
+            assert!(parse_options(&args(text)).is_err(), "{text}");
+        }
     }
 }

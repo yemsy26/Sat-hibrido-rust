@@ -2,20 +2,27 @@
 name = "dpll_check"
 version = "0.1.0"
 edition = "2021"
-default-run = "dpll_check"
+default-run = "gpu_ramsey43"
+autobins = false
+
+[[bin]]
+name = "gpu_ramsey43"
+path = "src/bin/gpu_ramsey43.rs"
+required-features = ["neuro-trt"]
 
 [dependencies]
-# Puente de I/O en RAM para las trazas: anillo SPSC y sink zstd.
-chronos-vfs = { path = "Chronos-VFS" }
-# Mejora 3: CUDA nativo para la fase "conquer". Opcional: sin `--features gpu` no se
-# compila y el binario es el de CPU de siempre. El driver (nvcuda, que instala el
-# controlador de la tarjeta) y nvrtc (CUDA Toolkit, para compilar el nucleo al arrancar) se
-# cargan en tiempo de ejecucion; la version de las cabeceras se fija a la del toolkit que
-# tiene `nvcc` en el PATH para no depender de el al compilar.
+# Driver CUDA y NVRTC se cargan en ejecucion; el Toolkit se fija a CUDA 12.6.
 cudarc = { version = "0.19.10", optional = true, default-features = false, features = ["std", "driver", "nvrtc", "dynamic-loading", "cuda-12060"] }
+libloading = { version = "0.9.0", optional = true }
 
 [features]
 gpu = ["dep:cudarc"]
+# Mock CUDA de integración del puente, sin engine TensorRT ni modelo entrenado.
+neuro-mock = ["gpu", "dep:libloading"]
+# Inferencia TensorRT real; requiere SDK nativo sólo al activar esta feature.
+neuro-trt = ["gpu", "dep:libloading"]
+# Muestreo residente y exportación por lotes; no requiere el puente mock.
+neuro-dataset = ["gpu"]
 
 [profile.release]
 debug = false

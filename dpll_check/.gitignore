@@ -1,2 +1,6 @@
-# Libreria local enlazada por ruta desde Cargo.toml; tiene su propio repositorio.
-/Chronos-VFS/
+/target/
+**/__pycache__/
+*.py[cod]
+/results/asedio_neuro_k43.log
+/results/modelo_k43_neuro.sat
+/results/*.png

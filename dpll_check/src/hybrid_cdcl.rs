@@ -3,6 +3,14 @@ use super::proof::ProofLog;
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
+#[path = "deep_trail.rs"]
+mod deep_trail;
+use deep_trail::{DeepTrailMessage, DeepTrailSnapshot};
+#[path = "hard_cube.rs"]
+mod hard_cube;
+pub use hard_cube::HardCubeWriter;
+use hard_cube::{HardCubeSender, HardCubeSnapshot};
+pub use deep_trail::DeepTrailWriter;
 pub type Clause = Vec<i32>;
 pub type Formula = Vec<Clause>;
 #[derive(Clone, Copy, Debug, Default)]
@@ -99,6 +107,8 @@ pub const CUBE_FILTER_BATCH_CUBES: usize = 65_536;
 pub struct RecubeConfig {
     pub max_conflicts_per_cube: usize,
     pub split_variables: usize,
+    // Solo workers dinamicos: GC cada 10000 conflictos acumulados.
+    pub heavy_tail_gc: bool,
     pub max_live_cubes: usize,
     // El prefiltro no conoce las auxiliares que añade preprocess.
     pub max_split_variable: u32,
@@ -107,7 +117,8 @@ impl Default for RecubeConfig {
     fn default() -> Self {
         Self {
             max_conflicts_per_cube: 50_000,
-            split_variables: 10,
+            split_variables: 3,
+            heavy_tail_gc: true,
             max_live_cubes: 4_194_304,
             max_split_variable: u32::MAX,
         }
@@ -134,6 +145,10 @@ pub struct SwarmStats {
 // detrás de cada worker; al terminar es la suma exacta de los conflictos de todos los cubos.
 #[derive(Debug, Default)]
 pub struct SwarmProgress {
+    pub max_trail_depth: AtomicUsize,
+    deep_trail: Option<std::sync::mpsc::Sender<DeepTrailMessage>>,
+    hard_cube: Option<HardCubeSender>,
+    pub hard_cube_queued: AtomicU64,
     pub conflicts: AtomicU64,
     pub restarts: AtomicU64,
     pub lbd_sum: AtomicU64,
@@ -144,6 +159,26 @@ pub struct SwarmProgress {
     pub gpu_filtered: AtomicU64,
     pub cubes_yielded: AtomicU64,
     pub cubes_split: AtomicU64,
+}
+impl SwarmProgress {
+    pub fn enable_hard_cube(
+        &mut self,
+        path: impl AsRef<std::path::Path>,
+    ) -> std::io::Result<HardCubeWriter> {
+        let writer = HardCubeWriter::start(path)?;
+        self.hard_cube = Some(writer.sender());
+        Ok(writer)
+    }
+    // Configurar antes de compartir progress con los workers.
+    pub fn enable_deep_trail(
+        &mut self,
+        path: impl AsRef<std::path::Path>,
+    ) -> std::io::Result<DeepTrailWriter> {
+        let writer = DeepTrailWriter::start(path)?;
+        self.max_trail_depth.store(0, Ordering::Relaxed);
+        self.deep_trail = Some(writer.sender());
+        Ok(writer)
+    }
 }
 // Veredicto de un prefiltro de cubos: lo que demuestra de un cubo sin buscar.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -363,6 +398,8 @@ struct SearchControl<'a, 'p> {
     proof: Option<&'a mut dyn ProofLog>,
     // Telemetría del enjambre; sin observador no se publica nada.
     progress: Option<Beacon<'a>>,
+    // Se copia una sola vez al alcanzar el presupuesto, antes de analyze/backjump.
+    hard_trail: Option<&'a mut Vec<u32>>,
 }
 // Pesos enteros de probSAT, 2^16 * 2.06^(-roturas): cuanto más rompe un flip, menos probable.
 const BREAK_WEIGHTS: [u64; 16] =
@@ -577,6 +614,7 @@ impl Walker {
 }
 const DECAY: f64 = 0.95;
 const CLEANUP_INTERVAL: u64 = 64;
+const HEAVY_TAIL_GC_INTERVAL: u64 = 10_000;
 const MAX_ACTIVITY: f64 = 1e100;
 // Arena: [tamaño, LBD | flags, literales...]. Unidades y binarias no viven en ella.
 const HEADER: usize = 2;
@@ -590,7 +628,7 @@ const BINARY: u32 = 1 << 31;
 const NO_REASON: u32 = u32::MAX;
 const NONE: u32 = u32::MAX;
 const RESTART_MARGIN: f64 = 1.1;
-const RESTART_INTERVAL: u64 = 2;
+const RESTART_INTERVAL: u64 = 100;
 const LUBY_UNIT: u64 = 1024;
 const MODE_INTERVAL: u64 = 1000;
 // Tras la ignición inicial el oráculo gasta como mucho un flip por cada ORACLE_EFFORT
@@ -788,10 +826,12 @@ struct State {
     fast_lbd: Ema,
     slow_lbd: Ema,
     conflicts: u64,
+    last_restart: u64,
     next_restart: u64,
     luby: (u64, u64),
     mode_span: u64,
     next_mode: u64,
+    heavy_tail_gc: bool,
     cleanup_interval: u64,
     next_cleanup: u64,
     walker: Option<Walker>,
@@ -828,10 +868,12 @@ impl State {
             fast_lbd: Ema::new(0.03),
             slow_lbd: Ema::new(1e-5),
             conflicts: 0,
+            last_restart: 0,
             next_restart: RESTART_INTERVAL,
             luby: (1, 1),
             mode_span: MODE_INTERVAL,
             next_mode: MODE_INTERVAL,
+            heavy_tail_gc: false,
             cleanup_interval: CLEANUP_INTERVAL,
             next_cleanup: CLEANUP_INTERVAL,
             walker: None,
@@ -1230,14 +1272,20 @@ impl State {
         self.head = mark;
     }
     fn restart_due(&self) -> bool {
+        // Suelo estricto, incluso si vence el cambio de modo antes del intervalo.
+        if self.conflicts.saturating_sub(self.last_restart) < RESTART_INTERVAL {
+            return false;
+        }
         self.conflicts >= self.next_mode
             || (self.conflicts >= self.next_restart
                 && (self.stable || self.fast_lbd.value > RESTART_MARGIN * self.slow_lbd.value))
     }
     // Modo enfocado: VMTF y restarts tipo Glucose. Modo estable: EVSIDS y restarts Luby.
     fn restart(&mut self, base: usize) {
+        debug_assert!(self.conflicts.saturating_sub(self.last_restart) >= RESTART_INTERVAL);
         self.backjump(base);
         self.stats.restarts += 1;
+        self.last_restart = self.conflicts;
         if self.conflicts >= self.next_mode {
             self.stable = !self.stable;
             self.mode_span = self.mode_span.saturating_mul(2);
@@ -1316,12 +1364,28 @@ impl State {
         let walker = self.walker.as_ref().expect("Only the oracle reports its own model");
         signed_model(variables, walker.best_values.iter().copied())
     }
-    // Candidatas: aprendidas con LBD > 2 que no son razón ni se usaron desde la última reducción.
+    // Configurar una vez al clonar el worker; el calendario es acumulado entre cubos.
+    fn configure_heavy_tail_gc(&mut self, enabled: bool) {
+        self.heavy_tail_gc = enabled;
+        if enabled {
+            self.next_cleanup = self.conflicts.saturating_add(HEAVY_TAIL_GC_INTERVAL);
+        }
+    }
+    // Heavy-tail: aprende normal; reduce solo en fixpoint y no descarta cobertura de cubos.
     fn reduce_database(&mut self, mut proof: Option<(&mut (dyn ProofLog + '_), &[u32])>) {
         debug_assert_eq!(self.head, self.trail.len());
-        // Intervalo aritmético: la base retenida crece con la raíz del número de conflictos.
-        self.cleanup_interval += CLEANUP_INTERVAL;
-        self.next_cleanup = self.conflicts + self.cleanup_interval;
+        // conflicts es acumulado del worker; stats.conflicts se reinicia entre cubos.
+        // El guard caliente sigue siendo el existente: conflicts >= next_cleanup.
+        let heavy_tail = self.heavy_tail_gc;
+        if heavy_tail {
+            self.next_cleanup = self.conflicts.saturating_add(HEAVY_TAIL_GC_INTERVAL);
+        } else {
+            // Calendario legacy exacto cuando no se solicita esta politica.
+            self.cleanup_interval += CLEANUP_INTERVAL;
+            self.next_cleanup = self.conflicts + self.cleanup_interval;
+        }
+        let protected_glue = if heavy_tail { 4 } else { 2 };
+        let excluded = LOCKED | if heavy_tail { GARBAGE } else { USED };
         // Las razones vigentes son largas sin el bit BINARY (NO_REASON lo tiene).
         for &literal in &self.trail {
             let reason = self.reasons[variable_of(literal)];
@@ -1333,7 +1397,11 @@ impl State {
         let mut reference = 0;
         while reference < self.arena.len() {
             let meta = self.arena[reference + 1];
-            if meta & (LEARNED | LOCKED | USED) == LEARNED && meta & LBD_MASK > 2 {
+            if meta & (LEARNED | excluded) == LEARNED
+                && meta & LBD_MASK > protected_glue
+                // Unidades/binarias no estan en arena, pero la condicion lo protege tambien.
+                && (!heavy_tail || self.arena[reference] > 2)
+            {
                 candidates.push(reference);
             }
             self.arena[reference + 1] = meta & !(LOCKED | USED);
@@ -1348,9 +1416,18 @@ impl State {
                 .then_with(|| self.arena[b].cmp(&self.arena[a]))
                 .then_with(|| a.cmp(&b))
         });
-        let remove_count = (candidates.len() / 2).max(1);
+        // Heavy-tail borra floor(50%): un candidato aislado no se sacrifica.
+        let remove_count = if heavy_tail { candidates.len() / 2 }
+            else { (candidates.len() / 2).max(1) };
+        if remove_count == 0 {
+            return;
+        }
         let mut line: Vec<i32> = Vec::new();
+        let mut reclaimed_words = 0;
         for &reference in &candidates[..remove_count] {
+            if heavy_tail {
+                reclaimed_words += HEADER + self.arena[reference] as usize;
+            }
             self.arena[reference + 1] |= GARBAGE;
             // Una razón vigente nunca es candidata: lo borrado no sostiene ninguna unidad.
             if let Some((log, variables)) = proof.as_mut() {
@@ -1361,7 +1438,9 @@ impl State {
         }
         // La arena vieja guarda la nueva referencia de cada superviviente en su palabra de flags.
         let mut old = std::mem::take(&mut self.arena);
-        let mut arena = Vec::with_capacity(old.len());
+        // Liberar capacidad al compactar heavy-tail, sin shrink_to_fit ni copia extra.
+        // En legacy reclaimed_words=0 y la reserva conserva exactamente su politica.
+        let mut arena = Vec::with_capacity(old.len() - reclaimed_words);
         let mut reference = 0;
         while reference < old.len() {
             let next = reference + HEADER + old[reference] as usize;
@@ -1491,7 +1570,7 @@ fn solve_cdcl_inner(
     let Some((mut state, variables)) = prepared else {
         return (None, SolveStats { conflicts: 1, ..SolveStats::default() });
     };
-    let control = SearchControl { cube: &[], cancel: None, sharing: None, proof, progress: None };
+    let control = SearchControl { cube: &[], cancel: None, sharing: None, proof, progress: None, hard_trail: None };
     let (outcome, stats) = run_state(&mut state, &variables, feedback, control);
     match outcome {
         SearchOutcome::Sat(model) => (Some(model), stats),
@@ -1524,7 +1603,14 @@ fn run_state_budget<const BUDGETED: bool>(
     max_conflicts: usize,
 ) -> (SearchOutcome, SolveStats) {
     debug_assert!(!BUDGETED || control.proof.is_none());
-    let outcome = search::<BUDGETED>(state, variables, feedback, &mut control, max_conflicts);
+    // Seleccionar una vez por cubo: sin sonda, el bucle no contiene su comprobacion.
+    let track_depth = control.progress.as_ref()
+        .is_some_and(|beacon| beacon.progress.deep_trail.is_some());
+    let outcome = if track_depth {
+        search::<BUDGETED, true>(state, variables, feedback, &mut control, max_conflicts)
+    } else {
+        search::<BUDGETED, false>(state, variables, feedback, &mut control, max_conflicts)
+    };
     if let Some(beacon) = control.progress.as_mut() {
         // Lo que no llenó un lote sale al soltar el cubo: el total queda exacto.
         beacon.publish(state.stats.conflicts, true);
@@ -1535,13 +1621,18 @@ fn run_state_budget<const BUDGETED: bool>(
     }
     (outcome, state.stats)
 }
-fn search<const BUDGETED: bool>(
+fn search<const BUDGETED: bool, const TRACK_DEPTH: bool>(
     state: &mut State,
     variables: &[u32],
     feedback: Option<ReignitionConfig>,
     control: &mut SearchControl<'_, '_>,
     max_conflicts: usize,
 ) -> SearchOutcome {
+    let mut local_high_water = if TRACK_DEPTH {
+        control.progress.as_ref().map_or(0, |beacon| {
+            beacon.progress.max_trail_depth.load(Ordering::Relaxed)
+        })
+    } else { 0 };
     // La especialización <false> elimina el presupuesto de la ruta estática.
     let mut yield_after_root = false;
     // La cancelación se consulta una vez por conflicto o decisión, nunca dentro del BCP.
@@ -1586,6 +1677,14 @@ fn search<const BUDGETED: bool>(
                 }
                 return SearchOutcome::Unsat;
             }
+            let budget_reached = BUDGETED && max_conflicts != 0
+                && state.stats.conflicts >= max_conflicts;
+            if budget_reached {
+                if let Some(snapshot) = control.hard_trail.as_deref_mut() {
+                    snapshot.clear();
+                    snapshot.extend_from_slice(&state.trail);
+                }
+            }
             let (backjump_level, lbd) = state.analyze(conflict);
             if let Some(proof) = control.proof.as_deref_mut() {
                 external(variables, &state.learned, &mut line);
@@ -1606,12 +1705,18 @@ fn search<const BUDGETED: bool>(
                 beacon.pending_lbd_sum += u64::from(lbd);
                 beacon.publish(state.stats.conflicts, false);
             }
-            if BUDGETED && max_conflicts != 0 && state.stats.conflicts >= max_conflicts {
+            if budget_reached {
                 // El conflicto ya se aprendió. Restaurar raíz antes de ceder el cubo.
                 state.backjump(0);
                 yield_after_root = true;
             }
             continue;
+        }
+        // Solo snapshots tras BCP sin conflicto: antes de cualquier retroceso.
+        if TRACK_DEPTH {
+            if let Some(beacon) = control.progress.as_ref() {
+                publish_deep_trail(state, variables, beacon.progress, &mut local_high_water);
+            }
         }
         if BUDGETED && yield_after_root {
             debug_assert_eq!(state.level(), 0);
@@ -1741,7 +1846,7 @@ fn swarm_worker(
         state.stats = SolveStats::default();
         let control = SearchControl {
             cube, cancel: Some(cancel), sharing: link.as_mut(), proof: None,
-            progress: progress.map(Beacon::new),
+            progress: progress.map(Beacon::new), hard_trail: None,
         };
         let (outcome, stats) = run_state(&mut state, variables, feedback, control);
         report.total.add_search(stats);
@@ -1793,6 +1898,9 @@ pub fn solve_swarm_with_filter(
     if base.root_unsat {
         stats.total = base.stats;
         return (None, stats);
+    }
+    if let Some(observer) = progress.filter(|observer| observer.deep_trail.is_some()) {
+        publish_deep_trail(&base, &variables, observer, &mut 0);
     }
     if base.trail.len() == variables.len() {
         stats.total = base.stats;
@@ -1885,6 +1993,7 @@ pub fn solve_swarm_with_filter(
 // Optional dynamic frontier. The GPU callback stays on the calling thread.
 struct RecubeJob {
     cube: Vec<u32>,
+    recubings: u32,
     conflict_limit: usize,
     started: bool,
 }
@@ -1902,6 +2011,63 @@ enum RecubeEvent {
     Stopped { owner: usize },
 }
 
+fn micro_split(
+    state: &State,
+    variables: &[u32],
+    job: &RecubeJob,
+    recube: &RecubeConfig,
+) -> Vec<u32> {
+    let mut candidates: Vec<usize> = (0..variables.len())
+        .filter(|&variable| {
+            state.values[variable << 1] == 0
+                && variables[variable] <= recube.max_split_variable
+                && !job
+                    .cube
+                    .iter()
+                    .any(|&literal| (literal >> 1) as usize == variable)
+        })
+        .collect();
+    let compare = |&a: &usize, &b: &usize| {
+        state.scores[b]
+            .total_cmp(&state.scores[a])
+            .then_with(|| a.cmp(&b))
+    };
+    let count = recube.split_variables.min(3).min(candidates.len());
+    if count < candidates.len() {
+        candidates.select_nth_unstable_by(count, compare);
+    }
+    candidates.truncate(count);
+    candidates.sort_unstable_by(compare);
+    candidates
+        .into_iter()
+        .map(|variable| ((variable as u32) << 1) | u32::from(state.phases[variable]))
+        .collect()
+}
+
+fn publish_hard_cube(progress: &SwarmProgress, variables: &[u32], job: &RecubeJob, trail: &[u32]) {
+    let Some(sender) = &progress.hard_cube else {
+        return;
+    };
+    let recubings = job.recubings.saturating_add(1);
+    if recubings <= 3 || trail.is_empty() {
+        return;
+    }
+    let mut cube = Vec::with_capacity(job.cube.len());
+    let mut literals = Vec::with_capacity(trail.len());
+    external(variables, &job.cube, &mut cube);
+    external(variables, trail, &mut literals);
+    let snapshot = HardCubeSnapshot {
+        recubings,
+        cube,
+        depth: literals.len(),
+        literals,
+        total: variables.len(),
+    };
+    if sender.try_send(snapshot).is_ok() {
+        progress.hard_cube_queued.fetch_add(1, Ordering::Relaxed);
+    }
+}
+
 fn recube_worker(
     base: &State,
     variables: &[u32],
@@ -1915,6 +2081,8 @@ fn recube_worker(
     events: &std::sync::mpsc::Sender<RecubeEvent>,
 ) {
     let mut state = base.clone();
+    state.configure_heavy_tail_gc(recube.heavy_tail_gc);
+    let mut hard_trail = Vec::new();
     if let Some(walker) = state.walker.as_mut() {
         walker.reseed(owner as u64 + 1);
     }
@@ -1931,9 +2099,13 @@ fn recube_worker(
         let first_start = !job.started;
         job.started = true;
         state.stats = SolveStats::default();
+        hard_trail.clear();
+        let capture = job.recubings >= 3
+            && progress.is_some_and(|observer| observer.hard_cube.is_some());
         let control = SearchControl {
             cube: &job.cube, cancel: Some(cancel), sharing: link.as_mut(), proof: None,
             progress: progress.map(Beacon::new),
+            hard_trail: capture.then_some(&mut hard_trail),
         };
         let (mut outcome, total) = run_state_budget::<true>(
             &mut state, variables, feedback, control, job.conflict_limit,
@@ -1944,18 +2116,12 @@ fn recube_worker(
                 // Yielded searches have returned to the root propagation fixpoint.
                 debug_assert_eq!(state.level(), 0);
                 debug_assert_eq!(state.head, state.trail.len());
-                let mut candidates: Vec<usize> = (0..variables.len()).filter(|&variable| {
-                    state.values[variable << 1] == 0
-                        && variables[variable] <= recube.max_split_variable
-                        && !job.cube.iter().any(|&literal| (literal >> 1) as usize == variable)
-                }).collect();
-                candidates.sort_unstable_by(|&a, &b| {
-                    state.scores[b].total_cmp(&state.scores[a]).then_with(|| a.cmp(&b))
-                });
-                candidates.truncate(recube.split_variables.min(16));
-                split.extend(candidates.into_iter().map(|variable| {
-                    ((variable as u32) << 1) | u32::from(state.phases[variable])
-                }));
+                if capture {
+                    if let Some(observer) = progress {
+                        publish_hard_cube(observer, variables, &job, &hard_trail);
+                    }
+                }
+                split = micro_split(&state, variables, &job, recube);
             }
             SearchOutcome::Sat(_) => {
                 if cancel.compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire).is_err() {
@@ -2086,7 +2252,7 @@ impl RecubeFrontier {
                     cancel.store(true, Ordering::Release);
                 }
             }
-            RecubeEvent::Finished { owner, job, first_start, outcome, total, mut split } => {
+            RecubeEvent::Finished { owner, mut job, first_start, outcome, total, mut split } => {
                 assert!(self.busy[owner], "A recubing report must own an in-flight job");
                 self.busy[owner] = false;
                 stats.cubes_started += usize::from(first_start);
@@ -2102,6 +2268,7 @@ impl RecubeFrontier {
                     }
                     SearchOutcome::Cancelled => stats.cubes_cancelled += 1,
                     SearchOutcome::Yielded => {
+                        job.recubings = job.recubings.saturating_add(1);
                         stats.cubes_yielded += 1;
                         if let Some(progress) = progress {
                             progress.cubes_yielded.fetch_add(1, Ordering::Relaxed);
@@ -2135,7 +2302,8 @@ impl RecubeFrontier {
                                         literal ^ ((mask >> bit) & 1) as u32
                                     }));
                                     self.filter_pending.push_back(RecubeJob {
-                                        cube, conflict_limit: recube.max_conflicts_per_cube, started: false,
+                                        cube, recubings: job.recubings,
+                                        conflict_limit: recube.max_conflicts_per_cube, started: false,
                                     });
                                 }
                             }
@@ -2175,6 +2343,9 @@ pub fn solve_swarm_with_recubing(
         stats.total = base.stats;
         return (None, stats);
     }
+    if let Some(observer) = progress.filter(|observer| observer.deep_trail.is_some()) {
+        publish_deep_trail(&base, &variables, observer, &mut 0);
+    }
     if base.trail.len() == variables.len() {
         stats.total = base.stats;
         return (Some(extract_model(&base, &variables)), stats);
@@ -2187,7 +2358,7 @@ pub fn solve_swarm_with_recubing(
     }
     stats.total = base.stats;
     let jobs: Vec<RecubeJob> = make_cubes(&base, config).into_iter().map(|cube| RecubeJob {
-        cube, conflict_limit: recube.max_conflicts_per_cube, started: false,
+        cube, recubings: 0, conflict_limit: recube.max_conflicts_per_cube, started: false,
     }).collect();
     stats.cubes_generated = jobs.len();
     if let Some(progress) = progress {
@@ -2349,7 +2520,7 @@ mod deterministic_import_tests {
         }
 
         let mut link = Sharing::new(&pool, 0, 1);
-        let control = SearchControl { cube: &[], cancel: None, sharing: Some(&mut link), proof: None, progress: None };
+        let control = SearchControl { cube: &[], cancel: None, sharing: Some(&mut link), proof: None, progress: None, hard_trail: None };
         let (outcome, stats) = run_state(&mut state, &variables, None, control);
         let model = match outcome {
             SearchOutcome::Sat(model) => model,
@@ -2366,7 +2537,7 @@ mod deterministic_import_tests {
         // Siguiente cubo del mismo worker: cursor y filtro sobreviven, nada se reimporta.
         state.backjump(0);
         state.stats = SolveStats::default();
-        let control = SearchControl { cube: &[], cancel: None, sharing: Some(&mut link), proof: None, progress: None };
+        let control = SearchControl { cube: &[], cancel: None, sharing: Some(&mut link), proof: None, progress: None, hard_trail: None };
         let (_, stats) = run_state(&mut state, &variables, None, control);
         assert_eq!(stats.imported_clauses, 0);
         // Un lote nunca vuelve a su autor.
@@ -2477,10 +2648,11 @@ mod recube_frontier_fix_tests {
     use super::*;
 
     fn metadata_job(index: usize) -> RecubeJob {
-        RecubeJob { cube: Vec::new(), conflict_limit: index + 1, started: index & 1 != 0 }
+        RecubeJob { cube: Vec::new(), recubings: index as u32, conflict_limit: index + 1, started: index & 1 != 0 }
     }
 
     fn assert_metadata(job: &RecubeJob, index: usize) {
+        assert_eq!(job.recubings, index as u32);
         assert_eq!(job.conflict_limit, index + 1);
         assert_eq!(job.started, index & 1 != 0);
     }
@@ -2638,7 +2810,7 @@ mod recube_frontier_fix_tests {
         frontier.ready.push_back(RecubeJob { cube: vec![2], ..metadata_job(1) });
         frontier.ready.push_back(RecubeJob { cube: vec![4], ..metadata_job(2) });
         frontier.filter_pending.push_back(RecubeJob { cube: vec![6], ..metadata_job(3) });
-        let parent = RecubeJob { cube: vec![0], conflict_limit: recube.max_conflicts_per_cube, started: true };
+        let parent = RecubeJob { cube: vec![0], recubings: 0, conflict_limit: recube.max_conflicts_per_cube, started: true };
         finish(&mut frontier, parent, true, SearchOutcome::Yielded, 7, vec![8, 10, 12],
             &mut stats, &progress, &recube, &cancel);
         assert_eq!(frontier.outstanding, 4);
@@ -2671,7 +2843,7 @@ mod recube_frontier_fix_tests {
             progress.cubes_total.store(5, Ordering::Relaxed);
             let mut stats = SwarmStats { cubes_generated: 5, ..SwarmStats::default() };
             let mut frontier = mock_frontier(5, 5 + room);
-            let parent = RecubeJob { cube: vec![0, 3], conflict_limit: recube.max_conflicts_per_cube, started: true };
+            let parent = RecubeJob { cube: vec![0, 3], recubings: 0, conflict_limit: recube.max_conflicts_per_cube, started: true };
             finish(&mut frontier, parent, true, SearchOutcome::Yielded, 11, preferred.clone(),
                 &mut stats, &progress, &recube, &cancel);
             let mut depth = 0;
@@ -2683,6 +2855,7 @@ mod recube_frontier_fix_tests {
                 assert_eq!(job.cube.len(), 2 + depth);
                 assert_eq!(&job.cube[..2], &[0, 3]);
                 assert_eq!(job.conflict_limit, recube.max_conflicts_per_cube);
+                assert_eq!(job.recubings, 1);
                 assert!(!job.started);
                 let mut mask = 0;
                 for (bit, &literal) in job.cube[2..].iter().enumerate() {
@@ -2712,8 +2885,8 @@ mod recube_frontier_fix_tests {
             let progress = SwarmProgress::default();
             let mut stats = SwarmStats { cubes_generated: 2, ..SwarmStats::default() };
             let mut frontier = mock_frontier(2, 2);
-            frontier.ready.push_back(RecubeJob { cube: vec![2], conflict_limit: 50_000, started: false });
-            let parent = RecubeJob { cube: vec![0], conflict_limit: 50_000, started: true };
+            frontier.ready.push_back(RecubeJob { cube: vec![2], recubings: 0, conflict_limit: 50_000, started: false });
+            let parent = RecubeJob { cube: vec![0], recubings: 0, conflict_limit: 50_000, started: true };
             finish(&mut frontier, parent, true, SearchOutcome::Yielded, 50_000, vec![4, 6],
                 &mut stats, &progress, &recube, &cancel);
             let retry = frontier.filter_pending.pop_front().unwrap();
@@ -2789,5 +2962,551 @@ mod recube_frontier_fix_tests {
             assert_metadata(job, index);
         }
         assert_eq!(stats.cubes_filtered, 0);
+    }
+}
+
+#[cfg(test)]
+mod restart_floor_tests {
+    use super::*;
+
+    fn focused_state() -> State {
+        let mut state = State::new(1, SolveStats::default());
+        state.next_mode = u64::MAX;
+        state.fast_lbd.value = 2.0;
+        state.slow_lbd.value = 1.0;
+        state
+    }
+
+    #[test]
+    fn focused_bad_lbd_respects_the_99_to_100_conflict_boundary() {
+        assert_eq!(RESTART_INTERVAL, 100);
+        let mut state = focused_state();
+        // An overdue schedule must still obey the independent minimum.
+        state.next_restart = 1;
+        state.conflicts = 99;
+        assert!(!state.restart_due());
+        state.conflicts = 100;
+        assert!(state.restart_due());
+
+        state.restart(0);
+        assert_eq!(state.last_restart, 100);
+        assert_eq!(state.next_restart, 200);
+        assert_eq!(state.stats.restarts, 1);
+        assert!(!state.restart_due());
+        state.conflicts = 199;
+        assert!(!state.restart_due());
+        state.conflicts = 200;
+        assert!(state.restart_due());
+    }
+
+    #[test]
+    fn focused_healthy_lbd_does_not_force_a_restart_at_the_floor() {
+        let mut state = focused_state();
+        state.conflicts = 100;
+        state.fast_lbd.value = state.slow_lbd.value;
+        assert!(!state.restart_due());
+
+        // The existing Glucose comparison remains strict at its margin.
+        state.fast_lbd.value = RESTART_MARGIN * state.slow_lbd.value;
+        assert!(!state.restart_due());
+        state.fast_lbd.value += 0.01;
+        assert!(state.restart_due());
+    }
+
+    #[test]
+    fn overdue_mode_switch_waits_for_the_floor_and_records_the_restart() {
+        let mut state = focused_state();
+        state.last_restart = 950;
+        state.next_restart = 1050;
+        state.next_mode = 1000;
+        state.fast_lbd.value = state.slow_lbd.value;
+
+        state.conflicts = 1000;
+        assert!(!state.restart_due());
+        state.conflicts = 1049;
+        assert!(!state.restart_due());
+        state.conflicts = 1050;
+        assert!(state.restart_due());
+
+        state.restart(0);
+        assert_eq!(state.last_restart, 1050);
+        assert_eq!(state.stats.restarts, 1);
+        assert!(state.stable);
+        assert_eq!(state.mode_span, 2 * MODE_INTERVAL);
+        assert_eq!(state.next_mode, 1050 + 2 * MODE_INTERVAL);
+        assert_eq!(state.next_restart, 1050 + LUBY_UNIT);
+        assert!(!state.restart_due());
+    }
+
+    #[test]
+    fn stable_luby_interval_is_not_shortened_to_the_floor() {
+        assert_eq!(LUBY_UNIT, 1024);
+        let mut state = focused_state();
+        state.stable = true;
+        state.last_restart = 2000;
+        state.next_restart = 2000 + LUBY_UNIT;
+        state.fast_lbd.value = state.slow_lbd.value;
+
+        state.conflicts = 2000 + RESTART_INTERVAL;
+        assert!(!state.restart_due());
+        state.conflicts = state.next_restart - 1;
+        assert!(!state.restart_due());
+        state.conflicts += 1;
+        assert!(state.restart_due());
+
+        state.restart(0);
+        assert_eq!(state.last_restart, 3024);
+        assert_eq!(state.next_restart, 3024 + LUBY_UNIT);
+        assert_eq!(state.stats.restarts, 1);
+        assert!(state.stable);
+        state.conflicts = state.last_restart + RESTART_INTERVAL;
+        assert!(!state.restart_due());
+        state.conflicts = state.next_restart;
+        assert!(state.restart_due());
+    }
+
+    #[test]
+    fn resetting_cube_statistics_preserves_the_worker_lifetime_floor() {
+        let mut state = focused_state();
+        state.conflicts = 100;
+        assert!(state.restart_due());
+        state.restart(0);
+
+        state.conflicts = 150;
+        state.stats = SolveStats::default();
+        // A mode deadline on the next cube cannot bypass the retained stamp.
+        state.next_mode = 150;
+        assert_eq!(state.conflicts, 150);
+        assert_eq!(state.last_restart, 100);
+        assert!(!state.restart_due());
+        let cloned = state.clone();
+        assert_eq!(cloned.last_restart, 100);
+        assert!(!cloned.restart_due());
+
+        state.conflicts = 199;
+        assert!(!state.restart_due());
+        state.conflicts = 200;
+        assert!(state.restart_due());
+        state.restart(0);
+        assert_eq!(state.last_restart, 200);
+        // This cube's report has one restart; the worker has kept both stamps.
+        assert_eq!(state.stats.restarts, 1);
+    }
+}
+
+// Invocar solo desde search::<BUDGETED, true> tras un BCP sin conflicto,
+// antes de cualquier backjump/restart. local_high_water vive toda la busqueda.
+// external() conserva los IDs DIMACS: los IDs internos estan compactados.
+#[inline]
+fn publish_deep_trail(
+    state: &State,
+    variables: &[u32],
+    progress: &SwarmProgress,
+    local_high_water: &mut usize,
+) {
+    let depth = state.trail.len();
+    if depth <= *local_high_water {
+        return;
+    }
+    let previous = progress.max_trail_depth.fetch_max(depth, Ordering::Relaxed);
+    *local_high_water = previous.max(depth);
+    if depth <= previous {
+        return;
+    }
+    if let Some(sender) = &progress.deep_trail {
+        let mut literals = Vec::with_capacity(depth);
+        external(variables, &state.trail, &mut literals);
+        let snapshot = DeepTrailSnapshot { depth, total: variables.len(), literals };
+        // Canal sin limite: no espera I/O ni un lock de archivo desde el worker.
+        let _ = sender.send(DeepTrailMessage::Snapshot(snapshot));
+    }
+}
+
+#[cfg(test)]
+mod deep_trail_probe_tests {
+    use super::*;
+    static NEXT: AtomicUsize = AtomicUsize::new(0);
+
+    fn output_path() -> std::path::PathBuf {
+        let folder = std::path::Path::new("results").join(format!(
+            "deep-probe-{}-{}", std::process::id(), NEXT.fetch_add(1, Ordering::Relaxed)));
+        std::fs::create_dir_all(&folder).unwrap();
+        folder.join("snapshot.sat")
+    }
+    fn clean(path: &std::path::Path) {
+        if path.exists() { std::fs::remove_file(path).unwrap(); }
+        std::fs::remove_dir(path.parent().unwrap()).unwrap();
+    }
+
+    #[test]
+    fn records_external_signed_ids_and_skips_older_trails() {
+        let path = output_path();
+        let mut progress = SwarmProgress::default();
+        let writer = progress.enable_deep_trail(&path).unwrap();
+        let mut state = State::new(3, SolveStats::default());
+        state.assign(0, NO_REASON);
+        state.assign(3, NO_REASON);
+        let mut local = 0;
+        publish_deep_trail(&state, &[5, 10, 100], &progress, &mut local);
+        state.assign(4, NO_REASON);
+        publish_deep_trail(&state, &[5, 10, 100], &progress, &mut local);
+        let mut shorter = State::new(3, SolveStats::default());
+        shorter.assign(1, NO_REASON);
+        publish_deep_trail(&shorter, &[5, 10, 100], &progress, &mut 0);
+        assert_eq!(progress.max_trail_depth.load(Ordering::Relaxed), 3);
+        drop(writer);
+        let text = std::fs::read_to_string(&path).unwrap();
+        assert!(text.contains("c depth 3 total 3"));
+        assert!(text.ends_with("v 5 -10 100 0\n"));
+        clean(&path);
+    }
+
+    #[test]
+    fn completed_root_trail_is_published_without_cpu_decisions() {
+        let path = output_path();
+        let mut progress = SwarmProgress::default();
+        let writer = progress.enable_deep_trail(&path).unwrap();
+        let formula = vec![vec![5], vec![-10], vec![100]];
+        let (model, _) = solve_swarm_with_progress(&formula, SwarmConfig::default(), Some(&progress));
+        assert_eq!(model.unwrap(), vec![5, -10, 100]);
+        drop(writer);
+        assert_eq!(progress.max_trail_depth.load(Ordering::Relaxed), 3);
+        assert!(std::fs::read_to_string(&path).unwrap().contains("v 5 -10 100 0"));
+        clean(&path);
+    }
+
+    #[test]
+    fn budgeted_workers_export_a_propagated_trail_and_preserve_the_model() {
+        let path = output_path();
+        let mut progress = SwarmProgress::default();
+        let writer = progress.enable_deep_trail(&path).unwrap();
+        let formula = vec![vec![1, 2], vec![-1, 2], vec![1, -2]];
+        let config = SwarmConfig {
+            workers: 2, cubes_per_worker: 1, reignition: ReignitionConfig {
+                interval: 0, oracle: OracleConfig { flips_per_variable: 0, seed: 0 },
+            }, ..SwarmConfig::default()
+        };
+        let (model, _) = solve_swarm_with_recubing(&formula, config,
+            RecubeConfig { max_conflicts_per_cube: 1, ..RecubeConfig::default() },
+            Some(&progress), None);
+        assert_eq!(model.unwrap(), vec![1, 2]);
+        drop(writer);
+        assert_eq!(progress.max_trail_depth.load(Ordering::Relaxed), 2);
+        assert!(std::fs::read_to_string(&path).unwrap().ends_with("v 1 2 0\n"));
+        clean(&path);
+    }
+
+    #[test]
+    fn concurrent_records_keep_the_global_maximum_in_the_published_file() {
+        let path = output_path();
+        let mut progress = SwarmProgress::default();
+        let writer = progress.enable_deep_trail(&path).unwrap();
+        let variables: Vec<u32> = (1..=32).collect();
+        std::thread::scope(|scope| {
+            for _ in 0..4 {
+                let progress = &progress;
+                let variables = &variables;
+                scope.spawn(move || {
+                    let mut state = State::new(32, SolveStats::default());
+                    let mut local = 0;
+                    for variable in 0..32 {
+                        state.assign(variable << 1, NO_REASON);
+                        publish_deep_trail(&state, variables, progress, &mut local);
+                    }
+                });
+            }
+        });
+        drop(writer);
+        assert_eq!(progress.max_trail_depth.load(Ordering::Relaxed), 32);
+        let text = std::fs::read_to_string(&path).unwrap();
+        assert!(text.contains("c depth 32 total 32"));
+        assert!(text.ends_with(" 32 0\n"));
+        clean(&path);
+    }
+
+    #[test]
+    fn progress_without_the_probe_preserves_the_default_search_path() {
+        let progress = SwarmProgress::default();
+        let formula = vec![vec![1, 2], vec![-1, 2], vec![1, -2]];
+        let config = SwarmConfig {
+            workers: 2, reignition: ReignitionConfig {
+                interval: 0, oracle: OracleConfig { flips_per_variable: 0, seed: 0 },
+            }, ..SwarmConfig::default()
+        };
+        let (model, _) = solve_swarm_with_progress(&formula, config, Some(&progress));
+        assert_eq!(model.unwrap(), vec![1, 2]);
+        assert_eq!(progress.max_trail_depth.load(Ordering::Relaxed), 0);
+    }
+}
+
+#[cfg(test)]
+mod heavy_tail_gc_tests {
+    use super::*;
+
+    fn arena_clauses(state: &State) -> Vec<(Vec<u32>, u32)> {
+        let mut output = Vec::new();
+        let mut reference = 0;
+        while reference < state.arena.len() {
+            let length = state.arena[reference] as usize;
+            output.push((state.arena[reference + HEADER..reference + HEADER + length].to_vec(),
+                state.arena[reference + 1]));
+            reference += HEADER + length;
+        }
+        output
+    }
+
+    #[derive(Default)]
+    struct Deletions(Vec<Vec<i32>>);
+    impl ProofLog for Deletions {
+        fn add(&mut self, _: &[i32]) { panic!("GC must only log deletions"); }
+        fn delete(&mut self, clause: &[i32]) { self.0.push(clause.to_vec()); }
+    }
+
+    #[test]
+    fn lifetime_schedule_survives_cube_stats_resets_and_default_is_unchanged() {
+        let mut state = State::new(0, SolveStats::default());
+        let legacy = (state.cleanup_interval, state.next_cleanup);
+        state.configure_heavy_tail_gc(false);
+        assert_eq!((state.cleanup_interval, state.next_cleanup), legacy);
+        state.conflicts = 123;
+        state.configure_heavy_tail_gc(true);
+        assert_eq!(state.next_cleanup, 10_123);
+        state.stats.conflicts = 99;
+        state.stats = SolveStats::default();
+        assert_eq!(state.conflicts, 123);
+        assert_eq!(state.next_cleanup, 10_123);
+        state.conflicts = 10_123;
+        state.reduce_database(None);
+        assert_eq!(state.next_cleanup, 20_123);
+        assert_eq!(state.cleanup_interval, legacy.0);
+    }
+
+    #[test]
+    fn removes_worst_half_including_used_and_preserves_all_protected_kinds() {
+        let mut state = State::new(11, SolveStats::default());
+        state.configure_heavy_tail_gc(true);
+        let a = state.add_long(&[0, 2, 4], true, 30);
+        let b = state.add_long(&[0, 2, 6, 8], true, 30);
+        state.add_long(&[10, 12, 14], false, 0); // original
+        state.add_long(&[6, 10, 18], true, 4); // protected glue
+        let locked = state.add_long(&[8, 10, 16], true, 99);
+        let used = state.add_long(&[2, 12, 18], true, 35);
+        state.arena[used as usize + 1] |= USED;
+        state.add_long(&[4, 14, 16], true, 5);
+        state.watch_binary(0, 18);
+        state.assign_root(20);
+        state.assign(8, locked);
+        state.head = state.trail.len();
+        let mut log = Deletions::default();
+        let variables: Vec<u32> = (1..=11).collect();
+        let before_words = state.arena.len();
+        state.conflicts = 12_345;
+        state.reduce_database(Some((&mut log, &variables)));
+        assert_eq!(log.0, [vec![2, 7, 10], vec![1, 2, 4, 5]]);
+        assert_eq!(state.stats.deleted_clauses, 2);
+        assert_eq!(state.stats.database_reductions, 1);
+        assert_eq!(state.next_cleanup, 22_345);
+        assert_eq!(state.arena.len(), before_words - ((HEADER + 3) + (HEADER + 4)));
+        assert_eq!(state.arena.capacity(), state.arena.len(), "Heavy-tail must release erased arena storage");
+        let survivors = arena_clauses(&state);
+        for clause in [vec![0, 2, 4], vec![10, 12, 14], vec![6, 10, 18],
+            vec![8, 10, 16], vec![4, 14, 16]] {
+            assert!(survivors.iter().any(|(kept, _)| *kept == clause));
+        }
+        assert!(survivors.iter().all(|(_, flags)| flags & (LOCKED | GARBAGE | USED) == 0));
+        let moved = state.reasons[variable_of(8)] as usize;
+        assert_ne!(moved as u32, locked, "Deleting earlier clauses must relocate the locked reason");
+        assert_eq!(&state.arena[moved + HEADER..moved + HEADER + 3], &[8, 10, 16]);
+        assert_eq!(state.value(20), 1);
+        assert_eq!(state.reasons[variable_of(20)], NO_REASON);
+        assert_eq!(state.watches.iter().flatten().filter(|watch| watch.reference & BINARY != 0).count(), 2);
+        for (literal, watchers) in state.watches.iter().enumerate() {
+            for watch in watchers.iter().filter(|watch| watch.reference & BINARY == 0) {
+                let reference = watch.reference as usize;
+                assert!(reference < state.arena.len());
+                assert!([state.arena[reference + HEADER], state.arena[reference + HEADER + 1]]
+                    .contains(&(literal as u32)));
+            }
+        }
+        // a survived; b was worse at the same LBD because it was longer.
+        assert!(a < b);
+    }
+
+    #[test]
+    fn singleton_candidate_is_retained_in_heavy_tail_but_legacy_deletes_it() {
+        let mut heavy = State::new(3, SolveStats::default());
+        heavy.add_long(&[0, 2, 4], true, 10);
+        let mut legacy = heavy.clone();
+        heavy.configure_heavy_tail_gc(true);
+        heavy.reduce_database(None);
+        legacy.reduce_database(None);
+        assert_eq!(arena_clauses(&heavy).len(), 1);
+        assert_eq!(heavy.stats.deleted_clauses, 0);
+        assert_eq!(heavy.stats.database_reductions, 0);
+        assert!(legacy.arena.is_empty());
+        assert_eq!(legacy.arena.capacity(), HEADER + 3, "The legacy reservation is unchanged");
+        assert_eq!(legacy.stats.deleted_clauses, 1);
+        assert_eq!(legacy.next_cleanup, 2 * CLEANUP_INTERVAL);
+    }
+
+    #[test]
+    fn odd_candidate_count_uses_floor_and_breaks_ties_deterministically() {
+        let mut state = State::new(7, SolveStats::default());
+        state.configure_heavy_tail_gc(true);
+        for tail in [4, 6, 8, 10, 12] {
+            state.add_long(&[0, 2, tail], true, 8);
+        }
+        let mut log = Deletions::default();
+        state.reduce_database(Some((&mut log, &[1, 2, 3, 4, 5, 6, 7])));
+        assert_eq!(log.0, [vec![1, 2, 3], vec![1, 2, 4]]);
+        assert_eq!(state.stats.deleted_clauses, 2);
+        assert_eq!(arena_clauses(&state).len(), 3);
+    }
+
+    #[test]
+    fn all_protected_database_keeps_every_clause_but_reschedules_collection() {
+        let mut state = State::new(6, SolveStats::default());
+        state.configure_heavy_tail_gc(true);
+        state.add_long(&[0, 2, 4], false, 0);
+        for lbd in 1..=4 {
+            state.add_long(&[0, 2, 2 * lbd + 2], true, lbd);
+        }
+        let before = state.arena.clone();
+        state.conflicts = 20_000;
+        state.reduce_database(None);
+        assert_eq!(state.arena, before);
+        assert_eq!(state.next_cleanup, 30_000);
+        assert_eq!(state.stats.deleted_clauses, 0);
+    }
+
+    #[test]
+    fn rebuilt_two_watches_still_propagate_after_collection() {
+        let mut state = State::new(9, SolveStats::default());
+        state.configure_heavy_tail_gc(true);
+        let original = state.add_long(&[0, 2, 4], false, 0);
+        for (tail, lbd) in [(10, 5), (12, 6), (14, 7), (16, 8)] {
+            state.add_long(&[6, 8, tail], true, lbd);
+        }
+        state.reduce_database(None);
+        assert_eq!(state.stats.deleted_clauses, 2);
+        state.assign(1, NO_REASON);
+        state.assign(3, NO_REASON);
+        assert!(state.propagate().is_none());
+        assert_eq!(state.value(4), 1);
+        assert_eq!(state.reasons[variable_of(4)], original);
+        assert_eq!(state.head, state.trail.len());
+    }
+}
+
+#[cfg(test)]
+mod micro_cubing_tests {
+    use super::*;
+
+    fn job(cube: Vec<u32>) -> RecubeJob {
+        RecubeJob {
+            cube,
+            recubings: 3,
+            conflict_limit: 50_000,
+            started: true,
+        }
+    }
+
+    #[test]
+    fn split_uses_highest_vsids_and_excludes_fixed_or_unrepresentable_variables() {
+        let mut state = State::new(7, SolveStats::default());
+        state.scores = vec![1.0, 500.0, 600.0, 30.0, 40.0, 50.0, 1000.0];
+        state.phases = vec![0, 0, 0, 1, 0, 1, 0];
+        state.assign(4, NO_REASON); // Root variable 2, despite a large score.
+        state.head = state.trail.len();
+        let variables = [1, 10, 20, 30, 40, 50, 900];
+        let parent = job(vec![2]); // Cube variable 1, despite a large score.
+        let config = RecubeConfig {
+            max_split_variable: 50,
+            ..RecubeConfig::default()
+        };
+        assert_eq!(
+            micro_split(&state, &variables, &parent, &config),
+            [11, 8, 7]
+        );
+        let four = RecubeConfig {
+            split_variables: 2,
+            ..config
+        };
+        assert_eq!(micro_split(&state, &variables, &parent, &four), [11, 8]);
+        let capped = RecubeConfig {
+            split_variables: 16,
+            ..config
+        };
+        assert_eq!(
+            micro_split(&state, &variables, &parent, &capped),
+            [11, 8, 7]
+        );
+        assert_eq!(state.trail, [4]); // No decisions or values are mutated by splitting.
+    }
+
+    #[test]
+    fn split_ties_are_deterministic_and_small_frontiers_remain_exact() {
+        let state = State::new(5, SolveStats::default());
+        let variables = [3, 4, 10, 40, 100];
+        let parent = job(vec![0]);
+        let config = RecubeConfig::default();
+        let expected = vec![2, 4, 6];
+        for _ in 0..8 {
+            assert_eq!(micro_split(&state, &variables, &parent, &config), expected);
+        }
+        let config = RecubeConfig {
+            max_split_variable: 10,
+            ..config
+        };
+        assert_eq!(micro_split(&state, &variables, &parent, &config), [2, 4]);
+        let config = RecubeConfig {
+            max_split_variable: 0,
+            ..config
+        };
+        assert!(micro_split(&state, &variables, &parent, &config).is_empty());
+    }
+
+    #[test]
+    fn captures_the_budget_conflict_before_root_backjump() {
+        let variable = |pigeon: i32, hole: i32| 1 + pigeon * 3 + hole;
+        let mut formula: Vec<Vec<i32>> = (0..4)
+            .map(|pigeon| (0..3).map(|hole| variable(pigeon, hole)).collect())
+            .collect();
+        for hole in 0..3 {
+            for a in 0..4 {
+                for b in a + 1..4 {
+                    formula.push(vec![-variable(a, hole), -variable(b, hole)]);
+                }
+            }
+        }
+        let (mut state, variables) = prepare_formula(&formula, None).unwrap();
+        let mut captured = Vec::new();
+        let control = SearchControl {
+            cube: &[],
+            cancel: None,
+            sharing: None,
+            proof: None,
+            progress: None,
+            hard_trail: Some(&mut captured),
+        };
+        let (outcome, stats) = run_state_budget::<true>(&mut state, &variables, None, control, 1);
+        assert!(matches!(outcome, SearchOutcome::Yielded));
+        assert_eq!(stats.conflicts, 1);
+        assert_eq!(state.level(), 0);
+        assert_eq!(state.head, state.trail.len());
+        assert!(captured.len() > state.trail.len());
+        let mut signed = Vec::new();
+        external(&variables, &captured, &mut signed);
+        assert!(formula
+            .iter()
+            .any(|clause| clause.iter().all(|literal| signed.contains(&-*literal))));
+        let mut ids: Vec<_> = signed
+            .iter()
+            .map(|literal| literal.unsigned_abs())
+            .collect();
+        ids.sort_unstable();
+        let length = ids.len();
+        ids.dedup();
+        assert_eq!(ids.len(), length);
     }
 }
