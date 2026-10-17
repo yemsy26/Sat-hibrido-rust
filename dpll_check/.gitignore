@@ -1,2 +1,2 @@
-# Libreria local enlazada por ruta desde Cargo.toml; tiene su propio repositorio.
+# Copia local antigua de Chronos-VFS: ahora llega como dependencia de git (Cargo.toml).
 /Chronos-VFS/

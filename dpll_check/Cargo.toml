@@ -2,11 +2,16 @@
 name = "dpll_check"
 version = "0.1.0"
 edition = "2021"
+rust-version = "1.85"
+description = "Resolvedor SAT híbrido: CDCL, paridad sobre GF(2), ruptura de simetrías y enjambre de hilos"
+authors = ["Ramón Antonio Burgos Jerez"]
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/yemsy26/Sat-hibrido-rust"
 default-run = "dpll_check"
 
 [dependencies]
 # Puente de I/O en RAM para las trazas: anillo SPSC y sink zstd.
-chronos-vfs = { path = "Chronos-VFS" }
+chronos-vfs = { git = "https://github.com/yemsy26/Chronos-VFS", rev = "d7d398bf3c9afad3bbfd021d32112c67d3bec8c9" }
 
 [profile.release]
 debug = false
