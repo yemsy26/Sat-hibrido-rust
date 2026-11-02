@@ -1,0 +1,16 @@
+Sat-hibrido-rust
+Copyright 2026 Ramón Antonio Burgos Jerez (yemsy26)
+
+Este producto se distribuye bajo la Apache License, Version 2.0; el texto completo
+está en el fichero LICENSE.
+
+crates/chronos-vfs es Chronos-VFS, Copyright (c) 2026 yemsy26, bajo MIT o Apache-2.0
+a elección de quien lo use; sus textos están en esa carpeta.
+
+Los binarios compilados de este proyecto incluyen código de terceros, bajo sus propias
+licencias: zstd, zstd-safe y zstd-sys (BSD-3-Clause); libloading (ISC); cudarc, libc,
+cfg-if y getrandom (MIT o Apache-2.0).
+
+No se incluyen ni se licencian aquí: VeriPB, CaDiCaL, drat-trim, el toolkit CUDA, el SDK
+de TensorRT ni los grafos r55_42some.g6 de B. McKay. Se obtienen aparte y se rigen por
+sus propias condiciones.

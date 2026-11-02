@@ -1,0 +1,1618 @@
+[
+ {
+  "s": 3,
+  "t": 3,
+  "n": 5,
+  "mode": "classes",
+  "verdict": "SAT",
+  "expected": "SAT",
+  "total_solve_s": 0.09,
+  "total_proof_bytes": 153,
+  "total_lemmas": 8,
+  "classes": [
+   {
+    "cnf": "r33_5_classes_0.cnf",
+    "solve_s": 0.039,
+    "result": "UNSAT",
+    "proof_bytes": 72,
+    "proof_lemmas": 4,
+    "lrat_check_s": 0.035,
+    "lrat_verified": true,
+    "drat_trim_s": 0.094,
+    "drat_verified": true,
+    "root_degree": 0,
+    "window": [
+     0,
+     4
+    ],
+    "vars": 22,
+    "clauses": 66
+   },
+   {
+    "cnf": "r33_5_classes_1.cnf",
+    "solve_s": 0.027,
+    "result": "UNSAT",
+    "proof_bytes": 81,
+    "proof_lemmas": 4,
+    "lrat_check_s": 0.035,
+    "lrat_verified": true,
+    "drat_trim_s": 0.098,
+    "drat_verified": true,
+    "root_degree": 1,
+    "window": [
+     1,
+     3
+    ],
+    "vars": 48,
+    "clauses": 165
+   },
+   {
+    "cnf": "r33_5_classes_2.cnf",
+    "solve_s": 0.024,
+    "result": "SAT",
+    "root_degree": 2,
+    "window": [
+     2,
+     2
+    ],
+    "vars": 42,
+    "clauses": 150,
+    "model_errors": [],
+    "model_ok": true,
+    "red_degrees": [
+     2,
+     2,
+     2,
+     2,
+     2
+    ]
+   }
+  ]
+ },
+ {
+  "s": 3,
+  "t": 3,
+  "n": 5,
+  "mode": "plain",
+  "verdict": "SAT",
+  "expected": "SAT",
+  "total_solve_s": 0.027,
+  "total_proof_bytes": 0,
+  "total_lemmas": 0,
+  "classes": [
+   {
+    "cnf": "r33_5_plain_None.cnf",
+    "solve_s": 0.027,
+    "result": "SAT",
+    "root_degree": null,
+    "window": null,
+    "vars": 10,
+    "clauses": 20,
+    "model_errors": [],
+    "model_ok": true,
+    "red_degrees": [
+     2,
+     2,
+     2,
+     2,
+     2
+    ]
+   }
+  ]
+ },
+ {
+  "s": 3,
+  "t": 3,
+  "n": 6,
+  "mode": "classes",
+  "verdict": "UNSAT",
+  "expected": "UNSAT",
+  "total_solve_s": 0.072,
+  "total_proof_bytes": 266,
+  "total_lemmas": 13,
+  "classes": [
+   {
+    "cnf": "r33_6_classes_0.cnf",
+    "solve_s": 0.025,
+    "result": "UNSAT",
+    "proof_bytes": 81,
+    "proof_lemmas": 4,
+    "lrat_check_s": 0.034,
+    "lrat_verified": true,
+    "drat_trim_s": 0.106,
+    "drat_verified": true,
+    "root_degree": 0,
+    "window": [
+     0,
+     5
+    ],
+    "vars": 45,
+    "clauses": 145
+   },
+   {
+    "cnf": "r33_6_classes_1.cnf",
+    "solve_s": 0.023,
+    "result": "UNSAT",
+    "proof_bytes": 83,
+    "proof_lemmas": 4,
+    "lrat_check_s": 0.034,
+    "lrat_verified": true,
+    "drat_trim_s": 0.099,
+    "drat_verified": true,
+    "root_degree": 1,
+    "window": [
+     1,
+     4
+    ],
+    "vars": 93,
+    "clauses": 335
+   },
+   {
+    "cnf": "r33_6_classes_2.cnf",
+    "solve_s": 0.024,
+    "result": "UNSAT",
+    "proof_bytes": 102,
+    "proof_lemmas": 5,
+    "lrat_check_s": 0.031,
+    "lrat_verified": true,
+    "drat_trim_s": 0.082,
+    "drat_verified": true,
+    "root_degree": 2,
+    "window": [
+     2,
+     3
+    ],
+    "vars": 82,
+    "clauses": 305
+   }
+  ]
+ },
+ {
+  "s": 3,
+  "t": 3,
+  "n": 6,
+  "mode": "plain",
+  "verdict": "UNSAT",
+  "expected": "UNSAT",
+  "total_solve_s": 0.027,
+  "total_proof_bytes": 697,
+  "total_lemmas": 25,
+  "classes": [
+   {
+    "cnf": "r33_6_plain_None.cnf",
+    "solve_s": 0.027,
+    "result": "UNSAT",
+    "proof_bytes": 697,
+    "proof_lemmas": 25,
+    "lrat_check_s": 0.03,
+    "lrat_verified": true,
+    "drat_trim_s": 0.1,
+    "drat_verified": true,
+    "root_degree": null,
+    "window": null,
+    "vars": 15,
+    "clauses": 40
+   }
+  ]
+ },
+ {
+  "s": 3,
+  "t": 4,
+  "n": 8,
+  "mode": "classes",
+  "verdict": "SAT",
+  "expected": "SAT",
+  "total_solve_s": 0.217,
+  "total_proof_bytes": 12742,
+  "total_lemmas": 376,
+  "classes": [
+   {
+    "cnf": "r34_8_classes_0.cnf",
+    "solve_s": 0.03,
+    "result": "UNSAT",
+    "proof_bytes": 3294,
+    "proof_lemmas": 94,
+    "lrat_check_s": 0.032,
+    "lrat_verified": true,
+    "drat_trim_s": 0.098,
+    "drat_verified": true,
+    "root_degree": 0,
+    "window": [
+     0,
+     7
+    ],
+    "vars": 133,
+    "clauses": 469
+   },
+   {
+    "cnf": "r34_8_classes_7.cnf",
+    "solve_s": 0.03,
+    "result": "UNSAT",
+    "proof_bytes": 166,
+    "proof_lemmas": 7,
+    "lrat_check_s": 0.038,
+    "lrat_verified": true,
+    "drat_trim_s": 0.105,
+    "drat_verified": true,
+    "root_degree": 7,
+    "window": [
+     0,
+     7
+    ],
+    "vars": 133,
+    "clauses": 469
+   },
+   {
+    "cnf": "r34_8_classes_1.cnf",
+    "solve_s": 0.026,
+    "result": "UNSAT",
+    "proof_bytes": 8784,
+    "proof_lemmas": 254,
+    "lrat_check_s": 0.036,
+    "lrat_verified": true,
+    "drat_trim_s": 0.121,
+    "drat_verified": true,
+    "root_degree": 1,
+    "window": [
+     1,
+     6
+    ],
+    "vars": 243,
+    "clauses": 961
+   },
+   {
+    "cnf": "r34_8_classes_6.cnf",
+    "solve_s": 0.025,
+    "result": "UNSAT",
+    "proof_bytes": 166,
+    "proof_lemmas": 7,
+    "lrat_check_s": 0.037,
+    "lrat_verified": true,
+    "drat_trim_s": 0.094,
+    "drat_verified": true,
+    "root_degree": 6,
+    "window": [
+     1,
+     6
+    ],
+    "vars": 243,
+    "clauses": 961
+   },
+   {
+    "cnf": "r34_8_classes_2.cnf",
+    "solve_s": 0.027,
+    "result": "SAT",
+    "root_degree": 2,
+    "window": [
+     2,
+     5
+    ],
+    "vars": 216,
+    "clauses": 883,
+    "model_errors": [],
+    "model_ok": true,
+    "red_degrees": [
+     2,
+     2,
+     2,
+     2,
+     3,
+     3,
+     3,
+     3
+    ]
+   },
+   {
+    "cnf": "r34_8_classes_5.cnf",
+    "solve_s": 0.023,
+    "result": "UNSAT",
+    "proof_bytes": 166,
+    "proof_lemmas": 7,
+    "lrat_check_s": 0.031,
+    "lrat_verified": true,
+    "drat_trim_s": 0.104,
+    "drat_verified": true,
+    "root_degree": 5,
+    "window": [
+     2,
+     5
+    ],
+    "vars": 216,
+    "clauses": 883
+   },
+   {
+    "cnf": "r34_8_classes_3.cnf",
+    "solve_s": 0.033,
+    "result": "SAT",
+    "root_degree": 3,
+    "window": [
+     3,
+     4
+    ],
+    "vars": 199,
+    "clauses": 830,
+    "model_errors": [],
+    "model_ok": true,
+    "red_degrees": [
+     3,
+     3,
+     3,
+     3,
+     3,
+     3,
+     3,
+     3
+    ]
+   },
+   {
+    "cnf": "r34_8_classes_4.cnf",
+    "solve_s": 0.023,
+    "result": "UNSAT",
+    "proof_bytes": 166,
+    "proof_lemmas": 7,
+    "lrat_check_s": 0.034,
+    "lrat_verified": true,
+    "drat_trim_s": 0.097,
+    "drat_verified": true,
+    "root_degree": 4,
+    "window": [
+     3,
+     4
+    ],
+    "vars": 199,
+    "clauses": 830
+   }
+  ]
+ },
+ {
+  "s": 3,
+  "t": 4,
+  "n": 8,
+  "mode": "plain",
+  "verdict": "SAT",
+  "expected": "SAT",
+  "total_solve_s": 0.026,
+  "total_proof_bytes": 0,
+  "total_lemmas": 0,
+  "classes": [
+   {
+    "cnf": "r34_8_plain_None.cnf",
+    "solve_s": 0.026,
+    "result": "SAT",
+    "root_degree": null,
+    "window": null,
+    "vars": 28,
+    "clauses": 126,
+    "model_errors": [],
+    "model_ok": true,
+    "red_degrees": [
+     2,
+     2,
+     3,
+     3,
+     3,
+     3,
+     3,
+     3
+    ]
+   }
+  ]
+ },
+ {
+  "s": 3,
+  "t": 4,
+  "n": 9,
+  "mode": "classes",
+  "verdict": "UNSAT",
+  "expected": "UNSAT",
+  "total_solve_s": 0.251,
+  "total_proof_bytes": 37555,
+  "total_lemmas": 995,
+  "classes": [
+   {
+    "cnf": "r34_9_classes_0.cnf",
+    "solve_s": 0.039,
+    "result": "UNSAT",
+    "proof_bytes": 4336,
+    "proof_lemmas": 122,
+    "lrat_check_s": 0.032,
+    "lrat_verified": true,
+    "drat_trim_s": 0.088,
+    "drat_verified": true,
+    "root_degree": 0,
+    "window": [
+     0,
+     8
+    ],
+    "vars": 204,
+    "clauses": 750
+   },
+   {
+    "cnf": "r34_9_classes_8.cnf",
+    "solve_s": 0.023,
+    "result": "UNSAT",
+    "proof_bytes": 168,
+    "proof_lemmas": 7,
+    "lrat_check_s": 0.046,
+    "lrat_verified": true,
+    "drat_trim_s": 0.109,
+    "drat_verified": true,
+    "root_degree": 8,
+    "window": [
+     0,
+     8
+    ],
+    "vars": 204,
+    "clauses": 750
+   },
+   {
+    "cnf": "r34_9_classes_1.cnf",
+    "solve_s": 0.029,
+    "result": "UNSAT",
+    "proof_bytes": 9880,
+    "proof_lemmas": 261,
+    "lrat_check_s": 0.037,
+    "lrat_verified": true,
+    "drat_trim_s": 0.108,
+    "drat_verified": true,
+    "root_degree": 1,
+    "window": [
+     1,
+     7
+    ],
+    "vars": 354,
+    "clauses": 1465
+   },
+   {
+    "cnf": "r34_9_classes_7.cnf",
+    "solve_s": 0.027,
+    "result": "UNSAT",
+    "proof_bytes": 181,
+    "proof_lemmas": 7,
+    "lrat_check_s": 0.035,
+    "lrat_verified": true,
+    "drat_trim_s": 0.102,
+    "drat_verified": true,
+    "root_degree": 7,
+    "window": [
+     1,
+     7
+    ],
+    "vars": 354,
+    "clauses": 1465
+   },
+   {
+    "cnf": "r34_9_classes_2.cnf",
+    "solve_s": 0.029,
+    "result": "UNSAT",
+    "proof_bytes": 11505,
+    "proof_lemmas": 267,
+    "lrat_check_s": 0.036,
+    "lrat_verified": true,
+    "drat_trim_s": 0.113,
+    "drat_verified": true,
+    "root_degree": 2,
+    "window": [
+     2,
+     6
+    ],
+    "vars": 316,
+    "clauses": 1354
+   },
+   {
+    "cnf": "r34_9_classes_6.cnf",
+    "solve_s": 0.029,
+    "result": "UNSAT",
+    "proof_bytes": 181,
+    "proof_lemmas": 7,
+    "lrat_check_s": 0.037,
+    "lrat_verified": true,
+    "drat_trim_s": 0.098,
+    "drat_verified": true,
+    "root_degree": 6,
+    "window": [
+     2,
+     6
+    ],
+    "vars": 316,
+    "clauses": 1354
+   },
+   {
+    "cnf": "r34_9_classes_3.cnf",
+    "solve_s": 0.027,
+    "result": "UNSAT",
+    "proof_bytes": 10942,
+    "proof_lemmas": 310,
+    "lrat_check_s": 0.036,
+    "lrat_verified": true,
+    "drat_trim_s": 0.094,
+    "drat_verified": true,
+    "root_degree": 3,
+    "window": [
+     3,
+     5
+    ],
+    "vars": 290,
+    "clauses": 1273
+   },
+   {
+    "cnf": "r34_9_classes_5.cnf",
+    "solve_s": 0.024,
+    "result": "UNSAT",
+    "proof_bytes": 181,
+    "proof_lemmas": 7,
+    "lrat_check_s": 0.034,
+    "lrat_verified": true,
+    "drat_trim_s": 0.087,
+    "drat_verified": true,
+    "root_degree": 5,
+    "window": [
+     3,
+     5
+    ],
+    "vars": 290,
+    "clauses": 1273
+   },
+   {
+    "cnf": "r34_9_classes_4.cnf",
+    "solve_s": 0.024,
+    "result": "UNSAT",
+    "proof_bytes": 181,
+    "proof_lemmas": 7,
+    "lrat_check_s": 0.031,
+    "lrat_verified": true,
+    "drat_trim_s": 0.103,
+    "drat_verified": true,
+    "root_degree": 4,
+    "window": [
+     4,
+     4
+    ],
+    "vars": 276,
+    "clauses": 1222
+   }
+  ]
+ },
+ {
+  "s": 3,
+  "t": 4,
+  "n": 9,
+  "mode": "plain",
+  "verdict": "UNSAT",
+  "expected": "UNSAT",
+  "total_solve_s": 0.187,
+  "total_proof_bytes": 974045,
+  "total_lemmas": 10484,
+  "classes": [
+   {
+    "cnf": "r34_9_plain_None.cnf",
+    "solve_s": 0.187,
+    "result": "UNSAT",
+    "proof_bytes": 974045,
+    "proof_lemmas": 10484,
+    "lrat_check_s": 0.133,
+    "lrat_verified": true,
+    "drat_trim_s": 0.219,
+    "drat_verified": true,
+    "root_degree": null,
+    "window": null,
+    "vars": 36,
+    "clauses": 210
+   }
+  ]
+ },
+ {
+  "s": 3,
+  "t": 5,
+  "n": 13,
+  "mode": "classes",
+  "verdict": "SAT",
+  "expected": "SAT",
+  "total_solve_s": 0.439,
+  "total_proof_bytes": 276510,
+  "total_lemmas": 4312,
+  "classes": [
+   {
+    "cnf": "r35_13_classes_0.cnf",
+    "solve_s": 0.031,
+    "result": "UNSAT",
+    "proof_bytes": 16084,
+    "proof_lemmas": 378,
+    "lrat_check_s": 0.04,
+    "lrat_verified": true,
+    "drat_trim_s": 0.088,
+    "drat_verified": true,
+    "root_degree": 0,
+    "window": [
+     0,
+     12
+    ],
+    "vars": 738,
+    "clauses": 3631
+   },
+   {
+    "cnf": "r35_13_classes_12.cnf",
+    "solve_s": 0.027,
+    "result": "UNSAT",
+    "proof_bytes": 319,
+    "proof_lemmas": 11,
+    "lrat_check_s": 0.04,
+    "lrat_verified": true,
+    "drat_trim_s": 0.104,
+    "drat_verified": true,
+    "root_degree": 12,
+    "window": [
+     0,
+     12
+    ],
+    "vars": 738,
+    "clauses": 3631
+   },
+   {
+    "cnf": "r35_13_classes_1.cnf",
+    "solve_s": 0.033,
+    "result": "UNSAT",
+    "proof_bytes": 32796,
+    "proof_lemmas": 689,
+    "lrat_check_s": 0.047,
+    "lrat_verified": true,
+    "drat_trim_s": 0.112,
+    "drat_verified": true,
+    "root_degree": 1,
+    "window": [
+     1,
+     11
+    ],
+    "vars": 1156,
+    "clauses": 5954
+   },
+   {
+    "cnf": "r35_13_classes_11.cnf",
+    "solve_s": 0.032,
+    "result": "UNSAT",
+    "proof_bytes": 319,
+    "proof_lemmas": 11,
+    "lrat_check_s": 0.037,
+    "lrat_verified": true,
+    "drat_trim_s": 0.1,
+    "drat_verified": true,
+    "root_degree": 11,
+    "window": [
+     1,
+     11
+    ],
+    "vars": 1156,
+    "clauses": 5954
+   },
+   {
+    "cnf": "r35_13_classes_2.cnf",
+    "solve_s": 0.04,
+    "result": "UNSAT",
+    "proof_bytes": 37006,
+    "proof_lemmas": 687,
+    "lrat_check_s": 0.044,
+    "lrat_verified": true,
+    "drat_trim_s": 0.106,
+    "drat_verified": true,
+    "root_degree": 2,
+    "window": [
+     2,
+     10
+    ],
+    "vars": 1054,
+    "clauses": 5651
+   },
+   {
+    "cnf": "r35_13_classes_10.cnf",
+    "solve_s": 0.031,
+    "result": "UNSAT",
+    "proof_bytes": 319,
+    "proof_lemmas": 11,
+    "lrat_check_s": 0.059,
+    "lrat_verified": true,
+    "drat_trim_s": 0.091,
+    "drat_verified": true,
+    "root_degree": 10,
+    "window": [
+     2,
+     10
+    ],
+    "vars": 1054,
+    "clauses": 5651
+   },
+   {
+    "cnf": "r35_13_classes_3.cnf",
+    "solve_s": 0.054,
+    "result": "UNSAT",
+    "proof_bytes": 188072,
+    "proof_lemmas": 2470,
+    "lrat_check_s": 0.057,
+    "lrat_verified": true,
+    "drat_trim_s": 0.136,
+    "drat_verified": true,
+    "root_degree": 3,
+    "window": [
+     3,
+     9
+    ],
+    "vars": 972,
+    "clauses": 5398
+   },
+   {
+    "cnf": "r35_13_classes_9.cnf",
+    "solve_s": 0.026,
+    "result": "UNSAT",
+    "proof_bytes": 319,
+    "proof_lemmas": 11,
+    "lrat_check_s": 0.086,
+    "lrat_verified": true,
+    "drat_trim_s": 0.107,
+    "drat_verified": true,
+    "root_degree": 9,
+    "window": [
+     3,
+     9
+    ],
+    "vars": 972,
+    "clauses": 5398
+   },
+   {
+    "cnf": "r35_13_classes_4.cnf",
+    "solve_s": 0.042,
+    "result": "SAT",
+    "root_degree": 4,
+    "window": [
+     4,
+     8
+    ],
+    "vars": 910,
+    "clauses": 5195,
+    "model_errors": [],
+    "model_ok": true,
+    "red_degrees": [
+     4,
+     4,
+     4,
+     4,
+     4,
+     4,
+     4,
+     4,
+     4,
+     4,
+     4,
+     4,
+     4
+    ]
+   },
+   {
+    "cnf": "r35_13_classes_8.cnf",
+    "solve_s": 0.028,
+    "result": "UNSAT",
+    "proof_bytes": 319,
+    "proof_lemmas": 11,
+    "lrat_check_s": 0.039,
+    "lrat_verified": true,
+    "drat_trim_s": 0.118,
+    "drat_verified": true,
+    "root_degree": 8,
+    "window": [
+     4,
+     8
+    ],
+    "vars": 910,
+    "clauses": 5195
+   },
+   {
+    "cnf": "r35_13_classes_5.cnf",
+    "solve_s": 0.031,
+    "result": "UNSAT",
+    "proof_bytes": 319,
+    "proof_lemmas": 11,
+    "lrat_check_s": 0.047,
+    "lrat_verified": true,
+    "drat_trim_s": 0.166,
+    "drat_verified": true,
+    "root_degree": 5,
+    "window": [
+     5,
+     7
+    ],
+    "vars": 868,
+    "clauses": 5042
+   },
+   {
+    "cnf": "r35_13_classes_7.cnf",
+    "solve_s": 0.033,
+    "result": "UNSAT",
+    "proof_bytes": 319,
+    "proof_lemmas": 11,
+    "lrat_check_s": 0.043,
+    "lrat_verified": true,
+    "drat_trim_s": 0.122,
+    "drat_verified": true,
+    "root_degree": 7,
+    "window": [
+     5,
+     7
+    ],
+    "vars": 868,
+    "clauses": 5042
+   },
+   {
+    "cnf": "r35_13_classes_6.cnf",
+    "solve_s": 0.031,
+    "result": "UNSAT",
+    "proof_bytes": 319,
+    "proof_lemmas": 11,
+    "lrat_check_s": 0.048,
+    "lrat_verified": true,
+    "drat_trim_s": 0.099,
+    "drat_verified": true,
+    "root_degree": 6,
+    "window": [
+     6,
+     6
+    ],
+    "vars": 846,
+    "clauses": 4939
+   }
+  ]
+ },
+ {
+  "s": 3,
+  "t": 5,
+  "n": 13,
+  "mode": "plain",
+  "verdict": "SAT",
+  "expected": "SAT",
+  "total_solve_s": 0.03,
+  "total_proof_bytes": 0,
+  "total_lemmas": 0,
+  "classes": [
+   {
+    "cnf": "r35_13_plain_None.cnf",
+    "solve_s": 0.03,
+    "result": "SAT",
+    "root_degree": null,
+    "window": null,
+    "vars": 78,
+    "clauses": 1573,
+    "model_errors": [],
+    "model_ok": true,
+    "red_degrees": [
+     4,
+     4,
+     4,
+     4,
+     4,
+     4,
+     4,
+     4,
+     4,
+     4,
+     4,
+     4,
+     4
+    ]
+   }
+  ]
+ },
+ {
+  "s": 3,
+  "t": 5,
+  "n": 14,
+  "mode": "classes",
+  "verdict": "UNSAT",
+  "expected": "UNSAT",
+  "total_solve_s": 0.592,
+  "total_proof_bytes": 594445,
+  "total_lemmas": 8956,
+  "classes": [
+   {
+    "cnf": "r35_14_classes_0.cnf",
+    "solve_s": 0.031,
+    "result": "UNSAT",
+    "proof_bytes": 18205,
+    "proof_lemmas": 429,
+    "lrat_check_s": 0.042,
+    "lrat_verified": true,
+    "drat_trim_s": 0.102,
+    "drat_verified": true,
+    "root_degree": 0,
+    "window": [
+     0,
+     13
+    ],
+    "vars": 949,
+    "clauses": 5031
+   },
+   {
+    "cnf": "r35_14_classes_13.cnf",
+    "solve_s": 0.029,
+    "result": "UNSAT",
+    "proof_bytes": 320,
+    "proof_lemmas": 11,
+    "lrat_check_s": 0.037,
+    "lrat_verified": true,
+    "drat_trim_s": 0.102,
+    "drat_verified": true,
+    "root_degree": 13,
+    "window": [
+     0,
+     13
+    ],
+    "vars": 949,
+    "clauses": 5031
+   },
+   {
+    "cnf": "r35_14_classes_1.cnf",
+    "solve_s": 0.039,
+    "result": "UNSAT",
+    "proof_bytes": 36861,
+    "proof_lemmas": 811,
+    "lrat_check_s": 0.043,
+    "lrat_verified": true,
+    "drat_trim_s": 0.108,
+    "drat_verified": true,
+    "root_degree": 1,
+    "window": [
+     1,
+     12
+    ],
+    "vars": 1454,
+    "clauses": 7951
+   },
+   {
+    "cnf": "r35_14_classes_12.cnf",
+    "solve_s": 0.034,
+    "result": "UNSAT",
+    "proof_bytes": 320,
+    "proof_lemmas": 11,
+    "lrat_check_s": 0.038,
+    "lrat_verified": true,
+    "drat_trim_s": 0.1,
+    "drat_verified": true,
+    "root_degree": 12,
+    "window": [
+     1,
+     12
+    ],
+    "vars": 1454,
+    "clauses": 7951
+   },
+   {
+    "cnf": "r35_14_classes_2.cnf",
+    "solve_s": 0.062,
+    "result": "UNSAT",
+    "proof_bytes": 192067,
+    "proof_lemmas": 2681,
+    "lrat_check_s": 0.059,
+    "lrat_verified": true,
+    "drat_trim_s": 0.116,
+    "drat_verified": true,
+    "root_degree": 2,
+    "window": [
+     2,
+     11
+    ],
+    "vars": 1331,
+    "clauses": 7585
+   },
+   {
+    "cnf": "r35_14_classes_11.cnf",
+    "solve_s": 0.03,
+    "result": "UNSAT",
+    "proof_bytes": 320,
+    "proof_lemmas": 11,
+    "lrat_check_s": 0.046,
+    "lrat_verified": true,
+    "drat_trim_s": 0.091,
+    "drat_verified": true,
+    "root_degree": 11,
+    "window": [
+     2,
+     11
+    ],
+    "vars": 1331,
+    "clauses": 7585
+   },
+   {
+    "cnf": "r35_14_classes_3.cnf",
+    "solve_s": 0.059,
+    "result": "UNSAT",
+    "proof_bytes": 189098,
+    "proof_lemmas": 2668,
+    "lrat_check_s": 0.053,
+    "lrat_verified": true,
+    "drat_trim_s": 0.106,
+    "drat_verified": true,
+    "root_degree": 3,
+    "window": [
+     3,
+     10
+    ],
+    "vars": 1230,
+    "clauses": 7274
+   },
+   {
+    "cnf": "r35_14_classes_10.cnf",
+    "solve_s": 0.03,
+    "result": "UNSAT",
+    "proof_bytes": 320,
+    "proof_lemmas": 11,
+    "lrat_check_s": 0.048,
+    "lrat_verified": true,
+    "drat_trim_s": 0.102,
+    "drat_verified": true,
+    "root_degree": 10,
+    "window": [
+     3,
+     10
+    ],
+    "vars": 1230,
+    "clauses": 7274
+   },
+   {
+    "cnf": "r35_14_classes_4.cnf",
+    "solve_s": 0.052,
+    "result": "UNSAT",
+    "proof_bytes": 155334,
+    "proof_lemmas": 2268,
+    "lrat_check_s": 0.052,
+    "lrat_verified": true,
+    "drat_trim_s": 0.124,
+    "drat_verified": true,
+    "root_degree": 4,
+    "window": [
+     4,
+     9
+    ],
+    "vars": 1151,
+    "clauses": 7018
+   },
+   {
+    "cnf": "r35_14_classes_9.cnf",
+    "solve_s": 0.032,
+    "result": "UNSAT",
+    "proof_bytes": 320,
+    "proof_lemmas": 11,
+    "lrat_check_s": 0.043,
+    "lrat_verified": true,
+    "drat_trim_s": 0.098,
+    "drat_verified": true,
+    "root_degree": 9,
+    "window": [
+     4,
+     9
+    ],
+    "vars": 1151,
+    "clauses": 7018
+   },
+   {
+    "cnf": "r35_14_classes_5.cnf",
+    "solve_s": 0.028,
+    "result": "UNSAT",
+    "proof_bytes": 320,
+    "proof_lemmas": 11,
+    "lrat_check_s": 0.038,
+    "lrat_verified": true,
+    "drat_trim_s": 0.108,
+    "drat_verified": true,
+    "root_degree": 5,
+    "window": [
+     5,
+     8
+    ],
+    "vars": 1094,
+    "clauses": 6817
+   },
+   {
+    "cnf": "r35_14_classes_8.cnf",
+    "solve_s": 0.093,
+    "result": "UNSAT",
+    "proof_bytes": 320,
+    "proof_lemmas": 11,
+    "lrat_check_s": 0.053,
+    "lrat_verified": true,
+    "drat_trim_s": 0.11,
+    "drat_verified": true,
+    "root_degree": 8,
+    "window": [
+     5,
+     8
+    ],
+    "vars": 1094,
+    "clauses": 6817
+   },
+   {
+    "cnf": "r35_14_classes_6.cnf",
+    "solve_s": 0.036,
+    "result": "UNSAT",
+    "proof_bytes": 320,
+    "proof_lemmas": 11,
+    "lrat_check_s": 0.048,
+    "lrat_verified": true,
+    "drat_trim_s": 0.139,
+    "drat_verified": true,
+    "root_degree": 6,
+    "window": [
+     6,
+     7
+    ],
+    "vars": 1059,
+    "clauses": 6671
+   },
+   {
+    "cnf": "r35_14_classes_7.cnf",
+    "solve_s": 0.037,
+    "result": "UNSAT",
+    "proof_bytes": 320,
+    "proof_lemmas": 11,
+    "lrat_check_s": 0.082,
+    "lrat_verified": true,
+    "drat_trim_s": 0.121,
+    "drat_verified": true,
+    "root_degree": 7,
+    "window": [
+     6,
+     7
+    ],
+    "vars": 1059,
+    "clauses": 6671
+   }
+  ]
+ },
+ {
+  "s": 3,
+  "t": 5,
+  "n": 14,
+  "mode": "plain",
+  "verdict": "UNKNOWN",
+  "expected": "UNSAT",
+  "total_solve_s": 1200.081,
+  "total_proof_bytes": 0,
+  "total_lemmas": 0,
+  "classes": [
+   {
+    "cnf": "r35_14_plain_None.cnf",
+    "solve_s": 1200.081,
+    "result": "TIMEOUT",
+    "root_degree": null,
+    "window": null,
+    "vars": 91,
+    "clauses": 2366
+   }
+  ]
+ },
+ {
+  "s": 4,
+  "t": 4,
+  "n": 17,
+  "mode": "classes",
+  "verdict": "SAT",
+  "expected": "SAT",
+  "total_solve_s": 5.894,
+  "total_proof_bytes": 6163661,
+  "total_lemmas": 61919,
+  "classes": [
+   {
+    "cnf": "r44_17_classes_0.cnf",
+    "solve_s": 0.628,
+    "result": "UNSAT",
+    "proof_bytes": 32917,
+    "proof_lemmas": 637,
+    "lrat_check_s": 0.632,
+    "lrat_verified": true,
+    "drat_trim_s": 0.801,
+    "drat_verified": true,
+    "root_degree": 0,
+    "window": [
+     0,
+     16
+    ],
+    "vars": 1816,
+    "clauses": 9936
+   },
+   {
+    "cnf": "r44_17_classes_1.cnf",
+    "solve_s": 0.256,
+    "result": "UNSAT",
+    "proof_bytes": 343459,
+    "proof_lemmas": 4271,
+    "lrat_check_s": 0.352,
+    "lrat_verified": true,
+    "drat_trim_s": 0.487,
+    "drat_verified": true,
+    "root_degree": 1,
+    "window": [
+     1,
+     15
+    ],
+    "vars": 2630,
+    "clauses": 15211
+   },
+   {
+    "cnf": "r44_17_classes_2.cnf",
+    "solve_s": 0.964,
+    "result": "UNSAT",
+    "proof_bytes": 1255664,
+    "proof_lemmas": 12407,
+    "lrat_check_s": 0.569,
+    "lrat_verified": true,
+    "drat_trim_s": 0.813,
+    "drat_verified": true,
+    "root_degree": 2,
+    "window": [
+     2,
+     14
+    ],
+    "vars": 2432,
+    "clauses": 14620
+   },
+   {
+    "cnf": "r44_17_classes_3.cnf",
+    "solve_s": 0.599,
+    "result": "UNSAT",
+    "proof_bytes": 553124,
+    "proof_lemmas": 5839,
+    "lrat_check_s": 0.421,
+    "lrat_verified": true,
+    "drat_trim_s": 0.618,
+    "drat_verified": true,
+    "root_degree": 3,
+    "window": [
+     3,
+     13
+    ],
+    "vars": 2262,
+    "clauses": 14099
+   },
+   {
+    "cnf": "r44_17_classes_4.cnf",
+    "solve_s": 0.565,
+    "result": "UNSAT",
+    "proof_bytes": 803568,
+    "proof_lemmas": 7774,
+    "lrat_check_s": 0.25,
+    "lrat_verified": true,
+    "drat_trim_s": 0.655,
+    "drat_verified": true,
+    "root_degree": 4,
+    "window": [
+     4,
+     12
+    ],
+    "vars": 2120,
+    "clauses": 13648
+   },
+   {
+    "cnf": "r44_17_classes_5.cnf",
+    "solve_s": 0.893,
+    "result": "UNSAT",
+    "proof_bytes": 1003822,
+    "proof_lemmas": 11083,
+    "lrat_check_s": 0.577,
+    "lrat_verified": true,
+    "drat_trim_s": 0.813,
+    "drat_verified": true,
+    "root_degree": 5,
+    "window": [
+     5,
+     11
+    ],
+    "vars": 2006,
+    "clauses": 13267
+   },
+   {
+    "cnf": "r44_17_classes_6.cnf",
+    "solve_s": 1.14,
+    "result": "UNSAT",
+    "proof_bytes": 1468861,
+    "proof_lemmas": 13894,
+    "lrat_check_s": 0.677,
+    "lrat_verified": true,
+    "drat_trim_s": 0.903,
+    "drat_verified": true,
+    "root_degree": 6,
+    "window": [
+     6,
+     10
+    ],
+    "vars": 1920,
+    "clauses": 12956
+   },
+   {
+    "cnf": "r44_17_classes_7.cnf",
+    "solve_s": 0.431,
+    "result": "UNSAT",
+    "proof_bytes": 702246,
+    "proof_lemmas": 6014,
+    "lrat_check_s": 0.422,
+    "lrat_verified": true,
+    "drat_trim_s": 0.593,
+    "drat_verified": true,
+    "root_degree": 7,
+    "window": [
+     7,
+     9
+    ],
+    "vars": 1862,
+    "clauses": 12715
+   },
+   {
+    "cnf": "r44_17_classes_8.cnf",
+    "solve_s": 0.418,
+    "result": "SAT",
+    "root_degree": 8,
+    "window": [
+     8,
+     8
+    ],
+    "vars": 1832,
+    "clauses": 12544,
+    "model_errors": [],
+    "model_ok": true,
+    "red_degrees": [
+     8,
+     8,
+     8,
+     8,
+     8,
+     8,
+     8,
+     8,
+     8,
+     8,
+     8,
+     8,
+     8,
+     8,
+     8,
+     8,
+     8
+    ]
+   }
+  ]
+ },
+ {
+  "s": 4,
+  "t": 4,
+  "n": 17,
+  "mode": "plain",
+  "verdict": "SAT",
+  "expected": "SAT",
+  "total_solve_s": 0.463,
+  "total_proof_bytes": 0,
+  "total_lemmas": 0,
+  "classes": [
+   {
+    "cnf": "r44_17_plain_None.cnf",
+    "solve_s": 0.463,
+    "result": "SAT",
+    "root_degree": null,
+    "window": null,
+    "vars": 136,
+    "clauses": 4760,
+    "model_errors": [],
+    "model_ok": true,
+    "red_degrees": [
+     8,
+     8,
+     8,
+     8,
+     8,
+     8,
+     8,
+     8,
+     8,
+     8,
+     8,
+     8,
+     8,
+     8,
+     8,
+     8,
+     8
+    ]
+   }
+  ]
+ },
+ {
+  "s": 4,
+  "t": 4,
+  "n": 18,
+  "mode": "classes",
+  "verdict": "UNSAT",
+  "expected": "UNSAT",
+  "total_solve_s": 4.873,
+  "total_proof_bytes": 6144588,
+  "total_lemmas": 64161,
+  "classes": [
+   {
+    "cnf": "r44_18_classes_0.cnf",
+    "solve_s": 0.242,
+    "result": "UNSAT",
+    "proof_bytes": 41285,
+    "proof_lemmas": 760,
+    "lrat_check_s": 0.229,
+    "lrat_verified": true,
+    "drat_trim_s": 0.302,
+    "drat_verified": true,
+    "root_degree": 0,
+    "window": [
+     0,
+     17
+    ],
+    "vars": 2193,
+    "clauses": 12393
+   },
+   {
+    "cnf": "r44_18_classes_1.cnf",
+    "solve_s": 0.4,
+    "result": "UNSAT",
+    "proof_bytes": 257425,
+    "proof_lemmas": 3004,
+    "lrat_check_s": 0.184,
+    "lrat_verified": true,
+    "drat_trim_s": 0.41,
+    "drat_verified": true,
+    "root_degree": 1,
+    "window": [
+     1,
+     16
+    ],
+    "vars": 3143,
+    "clauses": 18695
+   },
+   {
+    "cnf": "r44_18_classes_2.cnf",
+    "solve_s": 1.188,
+    "result": "UNSAT",
+    "proof_bytes": 1651260,
+    "proof_lemmas": 16343,
+    "lrat_check_s": 0.576,
+    "lrat_verified": true,
+    "drat_trim_s": 0.941,
+    "drat_verified": true,
+    "root_degree": 2,
+    "window": [
+     2,
+     15
+    ],
+    "vars": 2916,
+    "clauses": 18017
+   },
+   {
+    "cnf": "r44_18_classes_3.cnf",
+    "solve_s": 0.515,
+    "result": "UNSAT",
+    "proof_bytes": 486877,
+    "proof_lemmas": 5527,
+    "lrat_check_s": 0.338,
+    "lrat_verified": true,
+    "drat_trim_s": 0.604,
+    "drat_verified": true,
+    "root_degree": 3,
+    "window": [
+     3,
+     14
+    ],
+    "vars": 2719,
+    "clauses": 17414
+   },
+   {
+    "cnf": "r44_18_classes_4.cnf",
+    "solve_s": 0.858,
+    "result": "UNSAT",
+    "proof_bytes": 1556792,
+    "proof_lemmas": 15296,
+    "lrat_check_s": 0.338,
+    "lrat_verified": true,
+    "drat_trim_s": 1.028,
+    "drat_verified": true,
+    "root_degree": 4,
+    "window": [
+     4,
+     13
+    ],
+    "vars": 2552,
+    "clauses": 16886
+   },
+   {
+    "cnf": "r44_18_classes_5.cnf",
+    "solve_s": 0.635,
+    "result": "UNSAT",
+    "proof_bytes": 862566,
+    "proof_lemmas": 8731,
+    "lrat_check_s": 0.563,
+    "lrat_verified": true,
+    "drat_trim_s": 0.683,
+    "drat_verified": true,
+    "root_degree": 5,
+    "window": [
+     5,
+     12
+    ],
+    "vars": 2415,
+    "clauses": 16433
+   },
+   {
+    "cnf": "r44_18_classes_6.cnf",
+    "solve_s": 0.387,
+    "result": "UNSAT",
+    "proof_bytes": 619235,
+    "proof_lemmas": 6759,
+    "lrat_check_s": 0.228,
+    "lrat_verified": true,
+    "drat_trim_s": 0.609,
+    "drat_verified": true,
+    "root_degree": 6,
+    "window": [
+     6,
+     11
+    ],
+    "vars": 2308,
+    "clauses": 16055
+   },
+   {
+    "cnf": "r44_18_classes_7.cnf",
+    "solve_s": 0.299,
+    "result": "UNSAT",
+    "proof_bytes": 289065,
+    "proof_lemmas": 3611,
+    "lrat_check_s": 0.175,
+    "lrat_verified": true,
+    "drat_trim_s": 0.492,
+    "drat_verified": true,
+    "root_degree": 7,
+    "window": [
+     7,
+     10
+    ],
+    "vars": 2231,
+    "clauses": 15752
+   },
+   {
+    "cnf": "r44_18_classes_8.cnf",
+    "solve_s": 0.349,
+    "result": "UNSAT",
+    "proof_bytes": 380083,
+    "proof_lemmas": 4130,
+    "lrat_check_s": 0.408,
+    "lrat_verified": true,
+    "drat_trim_s": 0.531,
+    "drat_verified": true,
+    "root_degree": 8,
+    "window": [
+     8,
+     9
+    ],
+    "vars": 2184,
+    "clauses": 15524
+   }
+  ]
+ },
+ {
+  "s": 4,
+  "t": 4,
+  "n": 18,
+  "mode": "plain",
+  "verdict": "UNKNOWN",
+  "expected": "UNSAT",
+  "total_solve_s": 1200.263,
+  "total_proof_bytes": 0,
+  "total_lemmas": 0,
+  "classes": [
+   {
+    "cnf": "r44_18_plain_None.cnf",
+    "solve_s": 1200.263,
+    "result": "TIMEOUT",
+    "root_degree": null,
+    "window": null,
+    "vars": 153,
+    "clauses": 6120
+   }
+  ]
+ }
+]

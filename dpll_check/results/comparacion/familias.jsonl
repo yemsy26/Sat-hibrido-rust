@@ -1,0 +1,100 @@
+{"instance": "aleatorio_200_2.cnf", "solver": "kissat", "seconds": 0.117, "verdict": "SAT", "limit": 300, "model_ok": true}
+{"instance": "aleatorio_200_2.cnf", "solver": "cadical", "seconds": 0.2, "verdict": "SAT", "limit": 300, "model_ok": true}
+{"instance": "aleatorio_200_1.cnf", "solver": "kissat", "seconds": 0.451, "verdict": "UNSAT", "limit": 300}
+{"instance": "aleatorio_200_1.cnf", "solver": "cadical", "seconds": 0.508, "verdict": "UNSAT", "limit": 300}
+{"instance": "aleatorio_200_3.cnf", "solver": "kissat", "seconds": 0.213, "verdict": "SAT", "limit": 300, "model_ok": true}
+{"instance": "aleatorio_200_3.cnf", "solver": "cadical", "seconds": 0.27, "verdict": "SAT", "limit": 300, "model_ok": true}
+{"instance": "aleatorio_250_1.cnf", "solver": "kissat", "seconds": 0.925, "verdict": "SAT", "limit": 300, "model_ok": true}
+{"instance": "aleatorio_250_1.cnf", "solver": "cadical", "seconds": 2.379, "verdict": "SAT", "limit": 300, "model_ok": true}
+{"instance": "aleatorio_250_2.cnf", "solver": "kissat", "seconds": 2.267, "verdict": "UNSAT", "limit": 300}
+{"instance": "aleatorio_250_2.cnf", "solver": "cadical", "seconds": 3.368, "verdict": "UNSAT", "limit": 300}
+{"instance": "aleatorio_250_3.cnf", "solver": "kissat", "seconds": 1.797, "verdict": "UNSAT", "limit": 300}
+{"instance": "aleatorio_250_3.cnf", "solver": "cadical", "seconds": 1.995, "verdict": "UNSAT", "limit": 300}
+{"instance": "aleatorio_300_2.cnf", "solver": "kissat", "seconds": 0.069, "verdict": "SAT", "limit": 300, "model_ok": true}
+{"instance": "aleatorio_300_2.cnf", "solver": "cadical", "seconds": 0.498, "verdict": "SAT", "limit": 300, "model_ok": true}
+{"instance": "aleatorio_300_3.cnf", "solver": "kissat", "seconds": 1.042, "verdict": "SAT", "limit": 300, "model_ok": true}
+{"instance": "aleatorio_300_3.cnf", "solver": "cadical", "seconds": 0.474, "verdict": "SAT", "limit": 300, "model_ok": true}
+{"instance": "palomar_10.cnf", "solver": "kissat", "seconds": 1.748, "verdict": "UNSAT", "limit": 300}
+{"instance": "aleatorio_300_1.cnf", "solver": "kissat", "seconds": 32.009, "verdict": "UNSAT", "limit": 300}
+{"instance": "aleatorio_300_1.cnf", "solver": "cadical", "seconds": 41.42, "verdict": "UNSAT", "limit": 300}
+{"instance": "palomar_10.cnf", "solver": "cadical", "seconds": 61.282, "verdict": "UNSAT", "limit": 300}
+{"instance": "palomar_11.cnf", "solver": "kissat", "seconds": 70.154, "verdict": "UNSAT", "limit": 300}
+{"instance": "palomar_9.cnf", "solver": "kissat", "seconds": 0.287, "verdict": "UNSAT", "limit": 300}
+{"instance": "palomar_9.cnf", "solver": "cadical", "seconds": 3.385, "verdict": "UNSAT", "limit": 300}
+{"instance": "ramsey_3_5_k13.cnf", "solver": "kissat", "seconds": 0.031, "verdict": "SAT", "limit": 300, "model_ok": true}
+{"instance": "ramsey_3_5_k13.cnf", "solver": "cadical", "seconds": 0.021, "verdict": "SAT", "limit": 300, "model_ok": true}
+{"instance": "palomar_11.cnf", "solver": "cadical", "seconds": 300, "verdict": "TIMEOUT", "limit": 300}
+{"instance": "palomar_12.cnf", "solver": "kissat", "seconds": 300, "verdict": "TIMEOUT", "limit": 300}
+{"instance": "ramsey_3_6_k17.cnf", "solver": "kissat", "seconds": 0.032, "verdict": "SAT", "limit": 300, "model_ok": true}
+{"instance": "ramsey_3_6_k17.cnf", "solver": "cadical", "seconds": 0.033, "verdict": "SAT", "limit": 300, "model_ok": true}
+{"instance": "palomar_12.cnf", "solver": "cadical", "seconds": 300, "verdict": "TIMEOUT", "limit": 300}
+{"instance": "ramsey_3_5_k14.cnf", "solver": "kissat", "seconds": 300, "verdict": "TIMEOUT", "limit": 300}
+{"instance": "ramsey_4_4_k17.cnf", "solver": "kissat", "seconds": 0.092, "verdict": "SAT", "limit": 300, "model_ok": true}
+{"instance": "ramsey_4_4_k17.cnf", "solver": "cadical", "seconds": 0.073, "verdict": "SAT", "limit": 300, "model_ok": true}
+{"instance": "ramsey_3_5_k14.cnf", "solver": "cadical", "seconds": 300, "verdict": "TIMEOUT", "limit": 300}
+{"instance": "ramsey_3_6_k18.cnf", "solver": "kissat", "seconds": 300, "verdict": "TIMEOUT", "limit": 300}
+{"instance": "ramsey_4_5_k24.cnf", "solver": "kissat", "seconds": 2.094, "verdict": "SAT", "limit": 300, "model_ok": true}
+{"instance": "ramsey_4_5_k24.cnf", "solver": "cadical", "seconds": 24.43, "verdict": "SAT", "limit": 300, "model_ok": true}
+{"instance": "tseitin_30.cnf", "solver": "kissat", "seconds": 0.022, "verdict": "UNSAT", "limit": 300}
+{"instance": "tseitin_30.cnf", "solver": "cadical", "seconds": 0.019, "verdict": "UNSAT", "limit": 300}
+{"instance": "tseitin_40.cnf", "solver": "kissat", "seconds": 0.025, "verdict": "UNSAT", "limit": 300}
+{"instance": "tseitin_40.cnf", "solver": "cadical", "seconds": 0.071, "verdict": "UNSAT", "limit": 300}
+{"instance": "tseitin_50.cnf", "solver": "kissat", "seconds": 0.043, "verdict": "UNSAT", "limit": 300}
+{"instance": "tseitin_50.cnf", "solver": "cadical", "seconds": 0.054, "verdict": "UNSAT", "limit": 300}
+{"instance": "tseitin_60.cnf", "solver": "kissat", "seconds": 0.121, "verdict": "UNSAT", "limit": 300}
+{"instance": "tseitin_60.cnf", "solver": "cadical", "seconds": 1.024, "verdict": "UNSAT", "limit": 300}
+{"instance": "ramsey_3_6_k18.cnf", "solver": "cadical", "seconds": 300, "verdict": "TIMEOUT", "limit": 300}
+{"instance": "ramsey_4_4_k18.cnf", "solver": "kissat", "seconds": 300, "verdict": "TIMEOUT", "limit": 300}
+{"instance": "tseitin_80.cnf", "solver": "kissat", "seconds": 26.202, "verdict": "UNSAT", "limit": 300}
+{"instance": "ramsey_4_4_k18.cnf", "solver": "cadical", "seconds": 300, "verdict": "TIMEOUT", "limit": 300}
+{"instance": "tseitin_80.cnf", "solver": "cadical", "seconds": 300, "verdict": "TIMEOUT", "limit": 300}
+{"instance": "aleatorio_200_2.cnf", "solver": "motor", "seconds": 0.035, "verdict": "SAT", "limit": 300, "model_ok": true}
+{"instance": "aleatorio_200_3.cnf", "solver": "motor", "seconds": 0.063, "verdict": "SAT", "limit": 300, "model_ok": true}
+{"instance": "aleatorio_200_1.cnf", "solver": "motor", "seconds": 0.25, "verdict": "UNSAT", "limit": 300}
+{"instance": "aleatorio_250_3.cnf", "solver": "motor", "seconds": 2.125, "verdict": "UNSAT", "limit": 300}
+{"instance": "aleatorio_250_1.cnf", "solver": "motor", "seconds": 2.226, "verdict": "SAT", "limit": 300, "model_ok": true}
+{"instance": "aleatorio_300_2.cnf", "solver": "motor", "seconds": 0.04, "verdict": "SAT", "limit": 300, "model_ok": true}
+{"instance": "palomar_10.cnf", "solver": "motor", "seconds": 0.016, "verdict": "UNSAT", "limit": 300}
+{"instance": "palomar_11.cnf", "solver": "motor", "seconds": 0.022, "verdict": "UNSAT", "limit": 300}
+{"instance": "palomar_12.cnf", "solver": "motor", "seconds": 0.022, "verdict": "UNSAT", "limit": 300}
+{"instance": "palomar_9.cnf", "solver": "motor", "seconds": 0.02, "verdict": "UNSAT", "limit": 300}
+{"instance": "ramsey_3_5_k13.cnf", "solver": "motor", "seconds": 0.27, "verdict": "SAT", "limit": 300, "model_ok": true}
+{"instance": "aleatorio_300_3.cnf", "solver": "motor", "seconds": 0.502, "verdict": "SAT", "limit": 300, "model_ok": true}
+{"instance": "ramsey_3_5_k14.cnf", "solver": "motor", "seconds": 0.358, "verdict": "UNSAT", "limit": 300}
+{"instance": "aleatorio_250_2.cnf", "solver": "motor", "seconds": 2.958, "verdict": "UNSAT", "limit": 300}
+{"instance": "ramsey_3_6_k17.cnf", "solver": "motor", "seconds": 0.825, "verdict": "SAT", "limit": 300, "model_ok": true}
+{"instance": "ramsey_3_6_k18.cnf", "solver": "motor", "seconds": 0.916, "verdict": "UNSAT", "limit": 300}
+{"instance": "ramsey_4_4_k17.cnf", "solver": "motor", "seconds": 1.099, "verdict": "SAT", "limit": 300, "model_ok": true}
+{"instance": "tseitin_30.cnf", "solver": "motor", "seconds": 0.02, "verdict": "UNSAT", "limit": 300}
+{"instance": "tseitin_40.cnf", "solver": "motor", "seconds": 0.018, "verdict": "UNSAT", "limit": 300}
+{"instance": "tseitin_50.cnf", "solver": "motor", "seconds": 0.017, "verdict": "UNSAT", "limit": 300}
+{"instance": "tseitin_60.cnf", "solver": "motor", "seconds": 0.014, "verdict": "UNSAT", "limit": 300}
+{"instance": "tseitin_80.cnf", "solver": "motor", "seconds": 0.019, "verdict": "UNSAT", "limit": 300}
+{"instance": "ramsey_4_4_k18.cnf", "solver": "motor", "seconds": 1.104, "verdict": "UNSAT", "limit": 300}
+{"instance": "ramsey_4_5_k24.cnf", "solver": "motor", "seconds": 19.587, "verdict": "SAT", "limit": 300, "model_ok": true}
+{"instance": "aleatorio_300_1.cnf", "solver": "motor", "seconds": 72.354, "verdict": "UNSAT", "limit": 300}
+{"instance": "aleatorio_200_1.cnf", "solver": "motor-4h", "seconds": 0.07, "verdict": "UNSAT", "limit": 300}
+{"instance": "aleatorio_200_2.cnf", "solver": "motor-4h", "seconds": 0.017, "verdict": "SAT", "limit": 300, "model_ok": true}
+{"instance": "aleatorio_200_3.cnf", "solver": "motor-4h", "seconds": 0.039, "verdict": "SAT", "limit": 300, "model_ok": true}
+{"instance": "aleatorio_250_1.cnf", "solver": "motor-4h", "seconds": 0.036, "verdict": "SAT", "limit": 300, "model_ok": true}
+{"instance": "aleatorio_250_2.cnf", "solver": "motor-4h", "seconds": 0.414, "verdict": "UNSAT", "limit": 300}
+{"instance": "aleatorio_250_3.cnf", "solver": "motor-4h", "seconds": 0.215, "verdict": "UNSAT", "limit": 300}
+{"instance": "aleatorio_300_1.cnf", "solver": "motor-4h", "seconds": 5.455, "verdict": "UNSAT", "limit": 300}
+{"instance": "aleatorio_300_2.cnf", "solver": "motor-4h", "seconds": 0.03, "verdict": "SAT", "limit": 300, "model_ok": true}
+{"instance": "aleatorio_300_3.cnf", "solver": "motor-4h", "seconds": 0.057, "verdict": "SAT", "limit": 300, "model_ok": true}
+{"instance": "palomar_10.cnf", "solver": "motor-4h", "seconds": 0.017, "verdict": "UNSAT", "limit": 300}
+{"instance": "palomar_11.cnf", "solver": "motor-4h", "seconds": 0.015, "verdict": "UNSAT", "limit": 300}
+{"instance": "palomar_12.cnf", "solver": "motor-4h", "seconds": 0.018, "verdict": "UNSAT", "limit": 300}
+{"instance": "palomar_9.cnf", "solver": "motor-4h", "seconds": 0.015, "verdict": "UNSAT", "limit": 300}
+{"instance": "ramsey_3_5_k13.cnf", "solver": "motor-4h", "seconds": 0.216, "verdict": "SAT", "limit": 300, "model_ok": true}
+{"instance": "ramsey_3_5_k14.cnf", "solver": "motor-4h", "seconds": 0.294, "verdict": "UNSAT", "limit": 300}
+{"instance": "ramsey_3_6_k17.cnf", "solver": "motor-4h", "seconds": 0.706, "verdict": "SAT", "limit": 300, "model_ok": true}
+{"instance": "ramsey_3_6_k18.cnf", "solver": "motor-4h", "seconds": 0.845, "verdict": "UNSAT", "limit": 300}
+{"instance": "ramsey_4_4_k17.cnf", "solver": "motor-4h", "seconds": 0.609, "verdict": "SAT", "limit": 300, "model_ok": true}
+{"instance": "ramsey_4_4_k18.cnf", "solver": "motor-4h", "seconds": 0.877, "verdict": "UNSAT", "limit": 300}
+{"instance": "ramsey_4_5_k24.cnf", "solver": "motor-4h", "seconds": 90.36, "verdict": "SAT", "limit": 300, "model_ok": true}
+{"instance": "tseitin_30.cnf", "solver": "motor-4h", "seconds": 0.013, "verdict": "UNSAT", "limit": 300}
+{"instance": "tseitin_40.cnf", "solver": "motor-4h", "seconds": 0.011, "verdict": "UNSAT", "limit": 300}
+{"instance": "tseitin_50.cnf", "solver": "motor-4h", "seconds": 0.019, "verdict": "UNSAT", "limit": 300}
+{"instance": "tseitin_60.cnf", "solver": "motor-4h", "seconds": 0.012, "verdict": "UNSAT", "limit": 300}
+{"instance": "tseitin_80.cnf", "solver": "motor-4h", "seconds": 0.011, "verdict": "UNSAT", "limit": 300}

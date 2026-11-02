@@ -1,0 +1,5 @@
+// Canonización PHP Certificada (CPC): verifica toda la matriz y proyecta solo auxiliares privados.
+// Cada modelo proyectado admite una sola celda por fila y una permutación con columnas crecientes.
+// AMO por fila, orden y dominios triangulares preservan SAT; los auxiliares originales permanecen libres.
+// Con p>h, una fila queda falsa: el PHP reconocido se cierra por BCP sin decisiones, en tiempo polinómico.
+// Esta garantía es específica del PHP certificado; el CDCL general conserva su complejidad de peor caso.

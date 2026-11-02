@@ -1,0 +1,58 @@
+{
+ "s": 4,
+ "t": 4,
+ "n": 18,
+ "d": 8,
+ "window": [
+  8,
+  9
+ ],
+ "k": 8,
+ "leaf_time": 60.0,
+ "seed": 1,
+ "exact": true,
+ "leaves": 5,
+ "cost_s": 0.0421,
+ "outcomes": {
+  "UNSAT": 5,
+  "SAT": 0,
+  "TIMEOUT": 0
+ },
+ "rows": [
+  {
+   "log2w": 0.0,
+   "dec": 8,
+   "res": "UNSAT",
+   "secs": 0.001,
+   "conflicts": 9
+  },
+  {
+   "log2w": 0.0,
+   "dec": 8,
+   "res": "UNSAT",
+   "secs": 0.0282,
+   "conflicts": 1466
+  },
+  {
+   "log2w": 0.0,
+   "dec": 8,
+   "res": "UNSAT",
+   "secs": 0.0109,
+   "conflicts": 332
+  },
+  {
+   "log2w": 0.0,
+   "dec": 8,
+   "res": "UNSAT",
+   "secs": 0.0009,
+   "conflicts": 13
+  },
+  {
+   "log2w": 0.0,
+   "dec": 8,
+   "res": "UNSAT",
+   "secs": 0.0011,
+   "conflicts": 24
+  }
+ ]
+}

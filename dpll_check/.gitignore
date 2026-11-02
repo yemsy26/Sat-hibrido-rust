@@ -1,0 +1,7 @@
+/target/
+**/__pycache__/
+*.py[cod]
+/results/asedio_neuro_k43.log
+/results/modelo_k43_neuro.sat
+/results/*.png
+/data/

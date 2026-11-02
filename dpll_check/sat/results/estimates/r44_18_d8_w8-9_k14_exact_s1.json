@@ -1,0 +1,121 @@
+{
+ "s": 4,
+ "t": 4,
+ "n": 18,
+ "d": 8,
+ "window": [
+  8,
+  9
+ ],
+ "k": 14,
+ "leaf_time": 60.0,
+ "seed": 1,
+ "exact": true,
+ "leaves": 14,
+ "cost_s": 0.1073,
+ "outcomes": {
+  "UNSAT": 14,
+  "SAT": 0,
+  "TIMEOUT": 0
+ },
+ "rows": [
+  {
+   "log2w": 0.0,
+   "dec": 14,
+   "res": "UNSAT",
+   "secs": 0.0231,
+   "conflicts": 1097
+  },
+  {
+   "log2w": 0.0,
+   "dec": 14,
+   "res": "UNSAT",
+   "secs": 0.0042,
+   "conflicts": 137
+  },
+  {
+   "log2w": 0.0,
+   "dec": 14,
+   "res": "UNSAT",
+   "secs": 0.0041,
+   "conflicts": 200
+  },
+  {
+   "log2w": 0.0,
+   "dec": 14,
+   "res": "UNSAT",
+   "secs": 0.0034,
+   "conflicts": 95
+  },
+  {
+   "log2w": 0.0,
+   "dec": 14,
+   "res": "UNSAT",
+   "secs": 0.0046,
+   "conflicts": 214
+  },
+  {
+   "log2w": 0.0,
+   "dec": 14,
+   "res": "UNSAT",
+   "secs": 0.0046,
+   "conflicts": 159
+  },
+  {
+   "log2w": 0.0,
+   "dec": 14,
+   "res": "UNSAT",
+   "secs": 0.004,
+   "conflicts": 127
+  },
+  {
+   "log2w": 0.0,
+   "dec": 14,
+   "res": "UNSAT",
+   "secs": 0.0079,
+   "conflicts": 261
+  },
+  {
+   "log2w": 0.0,
+   "dec": 14,
+   "res": "UNSAT",
+   "secs": 0.0178,
+   "conflicts": 1121
+  },
+  {
+   "log2w": 0.0,
+   "dec": 14,
+   "res": "UNSAT",
+   "secs": 0.0034,
+   "conflicts": 143
+  },
+  {
+   "log2w": 0.0,
+   "dec": 14,
+   "res": "UNSAT",
+   "secs": 0.0117,
+   "conflicts": 348
+  },
+  {
+   "log2w": 0.0,
+   "dec": 14,
+   "res": "UNSAT",
+   "secs": 0.0042,
+   "conflicts": 146
+  },
+  {
+   "log2w": 0.0,
+   "dec": 14,
+   "res": "UNSAT",
+   "secs": 0.0071,
+   "conflicts": 258
+  },
+  {
+   "log2w": 0.0,
+   "dec": 14,
+   "res": "UNSAT",
+   "secs": 0.0072,
+   "conflicts": 279
+  }
+ ]
+}

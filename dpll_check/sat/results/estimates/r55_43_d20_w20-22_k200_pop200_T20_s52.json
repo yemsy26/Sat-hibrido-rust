@@ -1,0 +1,2628 @@
+{
+ "s": 5,
+ "t": 5,
+ "n": 43,
+ "d": 20,
+ "window": [
+  20,
+  22
+ ],
+ "k": 200,
+ "leaf_time": 20.0,
+ "seed": 52,
+ "population": 200,
+ "levels": [
+  [
+   1,
+   0.0,
+   1
+  ],
+  [
+   2,
+   1.0,
+   2
+  ],
+  [
+   3,
+   1.585,
+   3
+  ],
+  [
+   4,
+   2.3219,
+   5
+  ],
+  [
+   5,
+   2.8074,
+   7
+  ],
+  [
+   6,
+   3.3219,
+   10
+  ],
+  [
+   7,
+   4.0,
+   16
+  ],
+  [
+   8,
+   4.5236,
+   23
+  ],
+  [
+   9,
+   5.2095,
+   37
+  ],
+  [
+   10,
+   5.8074,
+   56
+  ],
+  [
+   11,
+   6.4757,
+   89
+  ],
+  [
+   12,
+   7.1599,
+   143
+  ],
+  [
+   13,
+   7.858,
+   232
+  ],
+  [
+   14,
+   8.554,
+   324
+  ],
+  [
+   15,
+   9.2455,
+   323
+  ],
+  [
+   16,
+   9.8963,
+   314
+  ],
+  [
+   17,
+   10.5967,
+   325
+  ],
+  [
+   18,
+   11.2972,
+   325
+  ],
+  [
+   19,
+   11.9976,
+   325
+  ],
+  [
+   20,
+   12.6891,
+   323
+  ],
+  [
+   21,
+   13.3353,
+   313
+  ],
+  [
+   22,
+   14.0043,
+   318
+  ],
+  [
+   23,
+   14.6459,
+   312
+  ],
+  [
+   24,
+   15.3058,
+   316
+  ],
+  [
+   25,
+   15.9427,
+   311
+  ],
+  [
+   26,
+   16.6072,
+   317
+  ],
+  [
+   27,
+   17.2625,
+   315
+  ],
+  [
+   28,
+   17.8948,
+   310
+  ],
+  [
+   29,
+   18.5593,
+   317
+  ],
+  [
+   30,
+   19.2686,
+   327
+  ],
+  [
+   31,
+   20.0127,
+   335
+  ],
+  [
+   32,
+   20.7698,
+   338
+  ],
+  [
+   33,
+   21.4658,
+   324
+  ],
+  [
+   34,
+   22.1438,
+   320
+  ],
+  [
+   35,
+   22.8443,
+   325
+  ],
+  [
+   36,
+   23.5042,
+   316
+  ],
+  [
+   37,
+   24.1457,
+   312
+  ],
+  [
+   38,
+   24.7733,
+   309
+  ],
+  [
+   39,
+   25.3822,
+   305
+  ],
+  [
+   40,
+   25.9281,
+   292
+  ],
+  [
+   41,
+   26.5322,
+   304
+  ],
+  [
+   42,
+   27.1267,
+   302
+  ],
+  [
+   43,
+   27.7356,
+   305
+  ],
+  [
+   44,
+   28.3585,
+   308
+  ],
+  [
+   45,
+   28.8896,
+   289
+  ],
+  [
+   46,
+   29.4005,
+   285
+  ],
+  [
+   47,
+   29.9612,
+   295
+  ],
+  [
+   48,
+   30.6074,
+   313
+  ],
+  [
+   49,
+   31.3687,
+   339
+  ],
+  [
+   50,
+   32.0911,
+   330
+  ],
+  [
+   51,
+   32.7373,
+   313
+  ],
+  [
+   52,
+   33.3742,
+   311
+  ],
+  [
+   53,
+   33.9878,
+   306
+  ],
+  [
+   54,
+   34.6477,
+   316
+  ],
+  [
+   55,
+   35.2799,
+   310
+  ],
+  [
+   56,
+   35.9076,
+   309
+  ],
+  [
+   57,
+   36.572,
+   317
+  ],
+  [
+   58,
+   37.1278,
+   294
+  ],
+  [
+   59,
+   37.7176,
+   301
+  ],
+  [
+   60,
+   38.3545,
+   311
+  ],
+  [
+   61,
+   39.0638,
+   327
+  ],
+  [
+   62,
+   39.7775,
+   328
+  ],
+  [
+   63,
+   40.5217,
+   335
+  ],
+  [
+   64,
+   41.2529,
+   332
+  ],
+  [
+   65,
+   41.8617,
+   305
+  ],
+  [
+   66,
+   42.4705,
+   305
+  ],
+  [
+   67,
+   43.1304,
+   316
+  ],
+  [
+   68,
+   43.8175,
+   322
+  ],
+  [
+   69,
+   44.4682,
+   314
+  ],
+  [
+   70,
+   45.1236,
+   315
+  ],
+  [
+   71,
+   45.8634,
+   334
+  ],
+  [
+   72,
+   46.5815,
+   329
+  ],
+  [
+   73,
+   47.2864,
+   326
+  ],
+  [
+   74,
+   48.1464,
+   363
+  ],
+  [
+   75,
+   48.9496,
+   349
+  ],
+  [
+   76,
+   49.6764,
+   331
+  ],
+  [
+   77,
+   50.463,
+   345
+  ],
+  [
+   78,
+   51.2029,
+   334
+  ],
+  [
+   79,
+   51.9936,
+   346
+  ],
+  [
+   80,
+   52.8416,
+   360
+  ],
+  [
+   81,
+   53.7369,
+   372
+  ],
+  [
+   82,
+   54.5402,
+   349
+  ],
+  [
+   83,
+   55.3184,
+   343
+  ],
+  [
+   84,
+   56.0966,
+   343
+  ],
+  [
+   85,
+   56.7288,
+   310
+  ],
+  [
+   86,
+   57.3424,
+   306
+  ],
+  [
+   87,
+   57.9839,
+   312
+  ],
+  [
+   88,
+   58.6529,
+   318
+  ],
+  [
+   89,
+   59.2852,
+   310
+  ],
+  [
+   90,
+   59.9857,
+   325
+  ],
+  [
+   91,
+   60.5992,
+   306
+  ],
+  [
+   92,
+   61.1985,
+   303
+  ],
+  [
+   93,
+   61.6788,
+   279
+  ],
+  [
+   94,
+   62.1642,
+   280
+  ],
+  [
+   95,
+   62.6903,
+   288
+  ],
+  [
+   96,
+   63.2607,
+   297
+  ],
+  [
+   97,
+   63.8648,
+   304
+  ],
+  [
+   98,
+   64.4593,
+   302
+  ],
+  [
+   99,
+   65.0916,
+   310
+  ],
+  [
+   100,
+   65.6718,
+   299
+  ],
+  [
+   101,
+   66.1259,
+   274
+  ],
+  [
+   102,
+   66.3463,
+   233
+  ],
+  [
+   103,
+   66.708,
+   257
+  ],
+  [
+   104,
+   66.9529,
+   237
+  ],
+  [
+   105,
+   67.3203,
+   258
+  ],
+  [
+   106,
+   67.7263,
+   265
+  ],
+  [
+   107,
+   68.1485,
+   268
+  ],
+  [
+   108,
+   68.5545,
+   265
+  ],
+  [
+   109,
+   68.7308,
+   226
+  ],
+  [
+   110,
+   68.6261,
+   186
+  ],
+  [
+   111,
+   68.462,
+   166
+  ],
+  [
+   112,
+   68.5627,
+   178
+  ],
+  [
+   113,
+   68.7452,
+   202
+  ],
+  [
+   114,
+   68.9342,
+   228
+  ],
+  [
+   115,
+   69.2676,
+   252
+  ],
+  [
+   116,
+   70.1236,
+   362
+  ],
+  [
+   117,
+   71.1236,
+   400
+  ],
+  [
+   118,
+   72.1236,
+   400
+  ],
+  [
+   119,
+   73.1236,
+   400
+  ],
+  [
+   120,
+   74.1236,
+   400
+  ],
+  [
+   121,
+   75.1236,
+   400
+  ],
+  [
+   122,
+   76.1236,
+   400
+  ],
+  [
+   123,
+   77.1236,
+   400
+  ],
+  [
+   124,
+   78.1236,
+   400
+  ],
+  [
+   125,
+   79.1236,
+   400
+  ],
+  [
+   126,
+   80.1236,
+   400
+  ],
+  [
+   127,
+   81.1236,
+   400
+  ],
+  [
+   128,
+   82.1236,
+   400
+  ],
+  [
+   129,
+   83.1236,
+   400
+  ],
+  [
+   130,
+   84.1236,
+   400
+  ],
+  [
+   131,
+   85.1236,
+   400
+  ],
+  [
+   132,
+   86.1236,
+   400
+  ],
+  [
+   133,
+   87.1236,
+   400
+  ],
+  [
+   134,
+   88.1236,
+   400
+  ],
+  [
+   135,
+   89.1236,
+   400
+  ],
+  [
+   136,
+   90.1236,
+   400
+  ],
+  [
+   137,
+   91.1236,
+   400
+  ],
+  [
+   138,
+   92.1236,
+   400
+  ],
+  [
+   139,
+   93.1236,
+   400
+  ],
+  [
+   140,
+   94.1236,
+   400
+  ],
+  [
+   141,
+   95.1236,
+   400
+  ],
+  [
+   142,
+   96.1236,
+   400
+  ],
+  [
+   143,
+   97.1236,
+   400
+  ],
+  [
+   144,
+   98.1236,
+   400
+  ],
+  [
+   145,
+   99.1236,
+   400
+  ],
+  [
+   146,
+   100.1236,
+   400
+  ],
+  [
+   147,
+   101.1236,
+   400
+  ],
+  [
+   148,
+   102.1236,
+   400
+  ],
+  [
+   149,
+   103.1236,
+   400
+  ],
+  [
+   150,
+   104.1236,
+   400
+  ],
+  [
+   151,
+   105.1236,
+   400
+  ],
+  [
+   152,
+   106.1236,
+   400
+  ],
+  [
+   153,
+   107.1018,
+   394
+  ],
+  [
+   154,
+   108.0653,
+   390
+  ],
+  [
+   155,
+   109.0653,
+   400
+  ],
+  [
+   156,
+   110.0653,
+   400
+  ],
+  [
+   157,
+   111.0472,
+   395
+  ],
+  [
+   158,
+   112.0472,
+   400
+  ],
+  [
+   159,
+   112.9732,
+   380
+  ],
+  [
+   160,
+   113.8607,
+   370
+  ],
+  [
+   161,
+   114.8607,
+   400
+  ],
+  [
+   162,
+   115.7365,
+   367
+  ],
+  [
+   163,
+   116.5925,
+   362
+  ],
+  [
+   164,
+   117.4284,
+   357
+  ],
+  [
+   165,
+   118.2683,
+   358
+  ],
+  [
+   166,
+   119.0921,
+   354
+  ],
+  [
+   167,
+   120.0921,
+   400
+  ],
+  [
+   168,
+   121.0921,
+   400
+  ],
+  [
+   169,
+   122.0921,
+   400
+  ],
+  [
+   170,
+   123.0921,
+   400
+  ],
+  [
+   171,
+   124.0219,
+   381
+  ],
+  [
+   172,
+   124.9479,
+   380
+  ],
+  [
+   173,
+   125.9334,
+   396
+  ],
+  [
+   174,
+   126.9334,
+   400
+  ],
+  [
+   175,
+   127.7325,
+   348
+  ],
+  [
+   176,
+   128.7216,
+   397
+  ],
+  [
+   177,
+   129.4441,
+   330
+  ],
+  [
+   178,
+   130.1176,
+   319
+  ],
+  [
+   179,
+   131.1104,
+   398
+  ],
+  [
+   180,
+   132.0849,
+   393
+  ],
+  [
+   181,
+   132.9841,
+   373
+  ],
+  [
+   182,
+   133.6256,
+   312
+  ],
+  [
+   183,
+   134.2486,
+   308
+  ],
+  [
+   184,
+   135.0141,
+   340
+  ],
+  [
+   185,
+   136.0069,
+   398
+  ],
+  [
+   186,
+   137.0069,
+   400
+  ],
+  [
+   187,
+   137.9367,
+   381
+  ],
+  [
+   188,
+   138.8397,
+   374
+  ],
+  [
+   189,
+   139.7846,
+   385
+  ],
+  [
+   190,
+   140.7517,
+   391
+  ],
+  [
+   191,
+   141.6891,
+   383
+  ],
+  [
+   192,
+   142.553,
+   364
+  ],
+  [
+   193,
+   143.2929,
+   334
+  ],
+  [
+   194,
+   144.1125,
+   353
+  ],
+  [
+   195,
+   144.8085,
+   324
+  ],
+  [
+   196,
+   145.3983,
+   301
+  ],
+  [
+   197,
+   145.894,
+   282
+  ],
+  [
+   198,
+   146.5075,
+   306
+  ],
+  [
+   199,
+   147.3107,
+   349
+  ],
+  [
+   200,
+   148.1667,
+   362
+  ]
+ ],
+ "leaves_est": 4.005604592830085e+44,
+ "cost_s_est": 3.3700072728535855e+44,
+ "cost_is_lower_bound": true,
+ "mean_leaf_s": 0.841323,
+ "mean_leaf_s_solved": 0.7450482412060302,
+ "outcomes": {
+  "UNSAT": 199,
+  "SAT": 0,
+  "TIMEOUT": 1
+ },
+ "rows": [
+  {
+   "log2w": 140.523,
+   "dec": 200,
+   "res": "UNSAT",
+   "secs": 11.8269,
+   "conflicts": 8357,
+   "branches": []
+  },
+  {
+   "log2w": 140.523,
+   "dec": 200,
+   "res": "UNSAT",
+   "secs": 18.3895,
+   "conflicts": 7675,
+   "branches": []
+  },
+  {
+   "log2w": 140.523,
+   "dec": 200,
+   "res": "UNSAT",
+   "secs": 16.7409,
+   "conflicts": 9299,
+   "branches": []
+  },
+  {
+   "log2w": 140.523,
+   "dec": 200,
+   "res": "TIMEOUT",
+   "secs": 20.0025,
+   "conflicts": 19836,
+   "branches": []
+  },
+  {
+   "log2w": 140.523,
+   "dec": 200,
+   "res": "UNSAT",
+   "secs": 0.4246,
+   "conflicts": 684,
+   "branches": []
+  },
+  {
+   "log2w": 140.523,
+   "dec": 200,
+   "res": "UNSAT",
+   "secs": 0.4496,
+   "conflicts": 1007,
+   "branches": []
+  },
+  {
+   "log2w": 140.523,
+   "dec": 200,
+   "res": "UNSAT",
+   "secs": 0.3581,
+   "conflicts": 434,
+   "branches": []
+  },
+  {
+   "log2w": 140.523,
+   "dec": 200,
+   "res": "UNSAT",
+   "secs": 0.5577,
+   "conflicts": 1259,
+   "branches": []
+  },
+  {
+   "log2w": 140.523,
+   "dec": 200,
+   "res": "UNSAT",
+   "secs": 0.4384,
+   "conflicts": 628,
+   "branches": []
+  },
+  {
+   "log2w": 140.523,
+   "dec": 200,
+   "res": "UNSAT",
+   "secs": 0.5051,
+   "conflicts": 572,
+   "branches": []
+  },
+  {
+   "log2w": 140.523,
+   "dec": 200,
+   "res": "UNSAT",
+   "secs": 8.3568,
+   "conflicts": 9236,
+   "branches": []
+  },
+  {
+   "log2w": 140.523,
+   "dec": 200,
+   "res": "UNSAT",
+   "secs": 6.0197,
+   "conflicts": 6171,
+   "branches": []
+  },
+  {
+   "log2w": 140.523,
+   "dec": 200,
+   "res": "UNSAT",
+   "secs": 9.5116,
+   "conflicts": 9431,
+   "branches": []
+  },
+  {
+   "log2w": 140.523,
+   "dec": 200,
+   "res": "UNSAT",
+   "secs": 11.8405,
+   "conflicts": 10311,
+   "branches": []
+  },
+  {
+   "log2w": 140.523,
+   "dec": 200,
+   "res": "UNSAT",
+   "secs": 1.4983,
+   "conflicts": 2004,
+   "branches": []
+  },
+  {
+   "log2w": 140.523,
+   "dec": 200,
+   "res": "UNSAT",
+   "secs": 0.8329,
+   "conflicts": 954,
+   "branches": []
+  },
+  {
+   "log2w": 140.523,
+   "dec": 200,
+   "res": "UNSAT",
+   "secs": 0.6834,
+   "conflicts": 394,
+   "branches": []
+  },
+  {
+   "log2w": 140.523,
+   "dec": 200,
+   "res": "UNSAT",
+   "secs": 0.7469,
+   "conflicts": 539,
+   "branches": []
+  },
+  {
+   "log2w": 140.523,
+   "dec": 200,
+   "res": "UNSAT",
+   "secs": 0.4635,
+   "conflicts": 232,
+   "branches": []
+  },
+  {
+   "log2w": 140.523,
+   "dec": 200,
+   "res": "UNSAT",
+   "secs": 0.6497,
+   "conflicts": 420,
+   "branches": []
+  },
+  {
+   "log2w": 140.523,
+   "dec": 200,
+   "res": "UNSAT",
+   "secs": 6.1896,
+   "conflicts": 6340,
+   "branches": []
+  },
+  {
+   "log2w": 140.523,
+   "dec": 200,
+   "res": "UNSAT",
+   "secs": 5.227,
+   "conflicts": 4267,
+   "branches": []
+  },
+  {
+   "log2w": 140.523,
+   "dec": 200,
+   "res": "UNSAT",
+   "secs": 0.9966,
+   "conflicts": 1064,
+   "branches": []
+  },
+  {
+   "log2w": 140.523,
+   "dec": 200,
+   "res": "UNSAT",
+   "secs": 0.4914,
+   "conflicts": 489,
+   "branches": []
+  },
+  {
+   "log2w": 140.523,
+   "dec": 200,
+   "res": "UNSAT",
+   "secs": 1.5125,
+   "conflicts": 1887,
+   "branches": []
+  },
+  {
+   "log2w": 140.523,
+   "dec": 200,
+   "res": "UNSAT",
+   "secs": 0.6904,
+   "conflicts": 1059,
+   "branches": []
+  },
+  {
+   "log2w": 140.523,
+   "dec": 200,
+   "res": "UNSAT",
+   "secs": 0.2215,
+   "conflicts": 136,
+   "branches": []
+  },
+  {
+   "log2w": 140.523,
+   "dec": 200,
+   "res": "UNSAT",
+   "secs": 0.2129,
+   "conflicts": 115,
+   "branches": []
+  },
+  {
+   "log2w": 140.523,
+   "dec": 200,
+   "res": "UNSAT",
+   "secs": 0.2113,
+   "conflicts": 61,
+   "branches": []
+  },
+  {
+   "log2w": 140.523,
+   "dec": 200,
+   "res": "UNSAT",
+   "secs": 0.2122,
+   "conflicts": 54,
+   "branches": []
+  },
+  {
+   "log2w": 140.523,
+   "dec": 200,
+   "res": "UNSAT",
+   "secs": 0.2385,
+   "conflicts": 41,
+   "branches": []
+  },
+  {
+   "log2w": 140.523,
+   "dec": 200,
+   "res": "UNSAT",
+   "secs": 0.2219,
+   "conflicts": 39,
+   "branches": []
+  },
+  {
+   "log2w": 140.523,
+   "dec": 200,
+   "res": "UNSAT",
+   "secs": 0.2263,
+   "conflicts": 52,
+   "branches": []
+  },
+  {
+   "log2w": 140.523,
+   "dec": 200,
+   "res": "UNSAT",
+   "secs": 0.9853,
+   "conflicts": 2225,
+   "branches": []
+  },
+  {
+   "log2w": 140.523,
+   "dec": 200,
+   "res": "UNSAT",
+   "secs": 0.9706,
+   "conflicts": 2259,
+   "branches": []
+  },
+  {
+   "log2w": 140.523,
+   "dec": 200,
+   "res": "UNSAT",
+   "secs": 0.4193,
+   "conflicts": 882,
+   "branches": []
+  },
+  {
+   "log2w": 140.523,
+   "dec": 200,
+   "res": "UNSAT",
+   "secs": 0.4278,
+   "conflicts": 780,
+   "branches": []
+  },
+  {
+   "log2w": 140.523,
+   "dec": 200,
+   "res": "UNSAT",
+   "secs": 0.403,
+   "conflicts": 954,
+   "branches": []
+  },
+  {
+   "log2w": 140.523,
+   "dec": 200,
+   "res": "UNSAT",
+   "secs": 0.4396,
+   "conflicts": 725,
+   "branches": []
+  },
+  {
+   "log2w": 140.523,
+   "dec": 200,
+   "res": "UNSAT",
+   "secs": 0.454,
+   "conflicts": 1000,
+   "branches": []
+  },
+  {
+   "log2w": 140.523,
+   "dec": 200,
+   "res": "UNSAT",
+   "secs": 0.4722,
+   "conflicts": 838,
+   "branches": []
+  },
+  {
+   "log2w": 140.523,
+   "dec": 200,
+   "res": "UNSAT",
+   "secs": 0.4345,
+   "conflicts": 862,
+   "branches": []
+  },
+  {
+   "log2w": 140.523,
+   "dec": 200,
+   "res": "UNSAT",
+   "secs": 0.3869,
+   "conflicts": 747,
+   "branches": []
+  },
+  {
+   "log2w": 140.523,
+   "dec": 200,
+   "res": "UNSAT",
+   "secs": 0.9636,
+   "conflicts": 1572,
+   "branches": []
+  },
+  {
+   "log2w": 140.523,
+   "dec": 200,
+   "res": "UNSAT",
+   "secs": 0.3937,
+   "conflicts": 398,
+   "branches": []
+  },
+  {
+   "log2w": 140.523,
+   "dec": 200,
+   "res": "UNSAT",
+   "secs": 0.1612,
+   "conflicts": 189,
+   "branches": []
+  },
+  {
+   "log2w": 140.523,
+   "dec": 200,
+   "res": "UNSAT",
+   "secs": 1.0382,
+   "conflicts": 1435,
+   "branches": []
+  },
+  {
+   "log2w": 140.523,
+   "dec": 200,
+   "res": "UNSAT",
+   "secs": 0.2336,
+   "conflicts": 89,
+   "branches": []
+  },
+  {
+   "log2w": 140.523,
+   "dec": 200,
+   "res": "UNSAT",
+   "secs": 0.242,
+   "conflicts": 89,
+   "branches": []
+  },
+  {
+   "log2w": 140.523,
+   "dec": 200,
+   "res": "UNSAT",
+   "secs": 0.2223,
+   "conflicts": 13,
+   "branches": []
+  },
+  {
+   "log2w": 140.523,
+   "dec": 200,
+   "res": "UNSAT",
+   "secs": 0.2174,
+   "conflicts": 84,
+   "branches": []
+  },
+  {
+   "log2w": 140.523,
+   "dec": 200,
+   "res": "UNSAT",
+   "secs": 0.197,
+   "conflicts": 86,
+   "branches": []
+  },
+  {
+   "log2w": 140.523,
+   "dec": 200,
+   "res": "UNSAT",
+   "secs": 0.2096,
+   "conflicts": 68,
+   "branches": []
+  },
+  {
+   "log2w": 140.523,
+   "dec": 200,
+   "res": "UNSAT",
+   "secs": 0.2057,
+   "conflicts": 25,
+   "branches": []
+  },
+  {
+   "log2w": 140.523,
+   "dec": 200,
+   "res": "UNSAT",
+   "secs": 0.2104,
+   "conflicts": 41,
+   "branches": []
+  },
+  {
+   "log2w": 140.523,
+   "dec": 200,
+   "res": "UNSAT",
+   "secs": 0.2608,
+   "conflicts": 28,
+   "branches": []
+  },
+  {
+   "log2w": 140.523,
+   "dec": 200,
+   "res": "UNSAT",
+   "secs": 0.2377,
+   "conflicts": 51,
+   "branches": []
+  },
+  {
+   "log2w": 140.523,
+   "dec": 200,
+   "res": "UNSAT",
+   "secs": 0.2164,
+   "conflicts": 25,
+   "branches": []
+  },
+  {
+   "log2w": 140.523,
+   "dec": 200,
+   "res": "UNSAT",
+   "secs": 0.1755,
+   "conflicts": 25,
+   "branches": []
+  },
+  {
+   "log2w": 140.523,
+   "dec": 200,
+   "res": "UNSAT",
+   "secs": 0.2644,
+   "conflicts": 69,
+   "branches": []
+  },
+  {
+   "log2w": 140.523,
+   "dec": 200,
+   "res": "UNSAT",
+   "secs": 0.2151,
+   "conflicts": 70,
+   "branches": []
+  },
+  {
+   "log2w": 140.523,
+   "dec": 200,
+   "res": "UNSAT",
+   "secs": 0.2311,
+   "conflicts": 35,
+   "branches": []
+  },
+  {
+   "log2w": 140.523,
+   "dec": 200,
+   "res": "UNSAT",
+   "secs": 0.193,
+   "conflicts": 40,
+   "branches": []
+  },
+  {
+   "log2w": 140.523,
+   "dec": 200,
+   "res": "UNSAT",
+   "secs": 0.2218,
+   "conflicts": 22,
+   "branches": []
+  },
+  {
+   "log2w": 140.523,
+   "dec": 200,
+   "res": "UNSAT",
+   "secs": 0.1977,
+   "conflicts": 7,
+   "branches": []
+  },
+  {
+   "log2w": 140.523,
+   "dec": 200,
+   "res": "UNSAT",
+   "secs": 0.2,
+   "conflicts": 19,
+   "branches": []
+  },
+  {
+   "log2w": 140.523,
+   "dec": 200,
+   "res": "UNSAT",
+   "secs": 0.2,
+   "conflicts": 23,
+   "branches": []
+  },
+  {
+   "log2w": 140.523,
+   "dec": 200,
+   "res": "UNSAT",
+   "secs": 0.185,
+   "conflicts": 19,
+   "branches": []
+  },
+  {
+   "log2w": 140.523,
+   "dec": 200,
+   "res": "UNSAT",
+   "secs": 0.2323,
+   "conflicts": 19,
+   "branches": []
+  },
+  {
+   "log2w": 140.523,
+   "dec": 200,
+   "res": "UNSAT",
+   "secs": 0.2362,
+   "conflicts": 19,
+   "branches": []
+  },
+  {
+   "log2w": 140.523,
+   "dec": 200,
+   "res": "UNSAT",
+   "secs": 0.2278,
+   "conflicts": 9,
+   "branches": []
+  },
+  {
+   "log2w": 140.523,
+   "dec": 200,
+   "res": "UNSAT",
+   "secs": 0.2326,
+   "conflicts": 7,
+   "branches": []
+  },
+  {
+   "log2w": 140.523,
+   "dec": 200,
+   "res": "UNSAT",
+   "secs": 0.2297,
+   "conflicts": 22,
+   "branches": []
+  },
+  {
+   "log2w": 140.523,
+   "dec": 200,
+   "res": "UNSAT",
+   "secs": 0.2328,
+   "conflicts": 50,
+   "branches": []
+  },
+  {
+   "log2w": 140.523,
+   "dec": 200,
+   "res": "UNSAT",
+   "secs": 0.2132,
+   "conflicts": 46,
+   "branches": []
+  },
+  {
+   "log2w": 140.523,
+   "dec": 200,
+   "res": "UNSAT",
+   "secs": 0.1866,
+   "conflicts": 40,
+   "branches": []
+  },
+  {
+   "log2w": 140.523,
+   "dec": 200,
+   "res": "UNSAT",
+   "secs": 0.2041,
+   "conflicts": 43,
+   "branches": []
+  },
+  {
+   "log2w": 140.523,
+   "dec": 200,
+   "res": "UNSAT",
+   "secs": 0.2143,
+   "conflicts": 140,
+   "branches": []
+  },
+  {
+   "log2w": 140.523,
+   "dec": 200,
+   "res": "UNSAT",
+   "secs": 0.2028,
+   "conflicts": 54,
+   "branches": []
+  },
+  {
+   "log2w": 140.523,
+   "dec": 200,
+   "res": "UNSAT",
+   "secs": 0.2704,
+   "conflicts": 81,
+   "branches": []
+  },
+  {
+   "log2w": 140.523,
+   "dec": 200,
+   "res": "UNSAT",
+   "secs": 0.2218,
+   "conflicts": 23,
+   "branches": []
+  },
+  {
+   "log2w": 140.523,
+   "dec": 200,
+   "res": "UNSAT",
+   "secs": 0.2178,
+   "conflicts": 97,
+   "branches": []
+  },
+  {
+   "log2w": 140.523,
+   "dec": 200,
+   "res": "UNSAT",
+   "secs": 0.2484,
+   "conflicts": 32,
+   "branches": []
+  },
+  {
+   "log2w": 140.523,
+   "dec": 200,
+   "res": "UNSAT",
+   "secs": 0.2176,
+   "conflicts": 202,
+   "branches": []
+  },
+  {
+   "log2w": 140.523,
+   "dec": 200,
+   "res": "UNSAT",
+   "secs": 0.2111,
+   "conflicts": 42,
+   "branches": []
+  },
+  {
+   "log2w": 140.523,
+   "dec": 200,
+   "res": "UNSAT",
+   "secs": 0.2475,
+   "conflicts": 37,
+   "branches": []
+  },
+  {
+   "log2w": 140.523,
+   "dec": 200,
+   "res": "UNSAT",
+   "secs": 0.2614,
+   "conflicts": 44,
+   "branches": []
+  },
+  {
+   "log2w": 140.523,
+   "dec": 200,
+   "res": "UNSAT",
+   "secs": 0.2063,
+   "conflicts": 40,
+   "branches": []
+  },
+  {
+   "log2w": 140.523,
+   "dec": 200,
+   "res": "UNSAT",
+   "secs": 0.2029,
+   "conflicts": 32,
+   "branches": []
+  },
+  {
+   "log2w": 140.523,
+   "dec": 200,
+   "res": "UNSAT",
+   "secs": 0.2411,
+   "conflicts": 52,
+   "branches": []
+  },
+  {
+   "log2w": 140.523,
+   "dec": 200,
+   "res": "UNSAT",
+   "secs": 0.2889,
+   "conflicts": 35,
+   "branches": []
+  },
+  {
+   "log2w": 140.523,
+   "dec": 200,
+   "res": "UNSAT",
+   "secs": 0.2401,
+   "conflicts": 134,
+   "branches": []
+  },
+  {
+   "log2w": 140.523,
+   "dec": 200,
+   "res": "UNSAT",
+   "secs": 0.234,
+   "conflicts": 203,
+   "branches": []
+  },
+  {
+   "log2w": 140.523,
+   "dec": 200,
+   "res": "UNSAT",
+   "secs": 0.2667,
+   "conflicts": 49,
+   "branches": []
+  },
+  {
+   "log2w": 140.523,
+   "dec": 200,
+   "res": "UNSAT",
+   "secs": 0.2791,
+   "conflicts": 84,
+   "branches": []
+  },
+  {
+   "log2w": 140.523,
+   "dec": 200,
+   "res": "UNSAT",
+   "secs": 0.2196,
+   "conflicts": 33,
+   "branches": []
+  },
+  {
+   "log2w": 140.523,
+   "dec": 200,
+   "res": "UNSAT",
+   "secs": 0.1927,
+   "conflicts": 61,
+   "branches": []
+  },
+  {
+   "log2w": 140.523,
+   "dec": 200,
+   "res": "UNSAT",
+   "secs": 0.2352,
+   "conflicts": 102,
+   "branches": []
+  },
+  {
+   "log2w": 140.523,
+   "dec": 200,
+   "res": "UNSAT",
+   "secs": 0.2039,
+   "conflicts": 102,
+   "branches": []
+  },
+  {
+   "log2w": 140.523,
+   "dec": 200,
+   "res": "UNSAT",
+   "secs": 0.2552,
+   "conflicts": 295,
+   "branches": []
+  },
+  {
+   "log2w": 140.523,
+   "dec": 200,
+   "res": "UNSAT",
+   "secs": 0.2189,
+   "conflicts": 79,
+   "branches": []
+  },
+  {
+   "log2w": 140.523,
+   "dec": 200,
+   "res": "UNSAT",
+   "secs": 0.198,
+   "conflicts": 92,
+   "branches": []
+  },
+  {
+   "log2w": 140.523,
+   "dec": 200,
+   "res": "UNSAT",
+   "secs": 0.2319,
+   "conflicts": 40,
+   "branches": []
+  },
+  {
+   "log2w": 140.523,
+   "dec": 200,
+   "res": "UNSAT",
+   "secs": 0.2323,
+   "conflicts": 69,
+   "branches": []
+  },
+  {
+   "log2w": 140.523,
+   "dec": 200,
+   "res": "UNSAT",
+   "secs": 0.2436,
+   "conflicts": 64,
+   "branches": []
+  },
+  {
+   "log2w": 140.523,
+   "dec": 200,
+   "res": "UNSAT",
+   "secs": 0.2814,
+   "conflicts": 159,
+   "branches": []
+  },
+  {
+   "log2w": 140.523,
+   "dec": 200,
+   "res": "UNSAT",
+   "secs": 0.2336,
+   "conflicts": 76,
+   "branches": []
+  },
+  {
+   "log2w": 140.523,
+   "dec": 200,
+   "res": "UNSAT",
+   "secs": 0.254,
+   "conflicts": 70,
+   "branches": []
+  },
+  {
+   "log2w": 140.523,
+   "dec": 200,
+   "res": "UNSAT",
+   "secs": 0.2301,
+   "conflicts": 84,
+   "branches": []
+  },
+  {
+   "log2w": 140.523,
+   "dec": 200,
+   "res": "UNSAT",
+   "secs": 0.2495,
+   "conflicts": 117,
+   "branches": []
+  },
+  {
+   "log2w": 140.523,
+   "dec": 200,
+   "res": "UNSAT",
+   "secs": 0.217,
+   "conflicts": 60,
+   "branches": []
+  },
+  {
+   "log2w": 140.523,
+   "dec": 200,
+   "res": "UNSAT",
+   "secs": 0.2524,
+   "conflicts": 39,
+   "branches": []
+  },
+  {
+   "log2w": 140.523,
+   "dec": 200,
+   "res": "UNSAT",
+   "secs": 0.2396,
+   "conflicts": 63,
+   "branches": []
+  },
+  {
+   "log2w": 140.523,
+   "dec": 200,
+   "res": "UNSAT",
+   "secs": 0.2181,
+   "conflicts": 74,
+   "branches": []
+  },
+  {
+   "log2w": 140.523,
+   "dec": 200,
+   "res": "UNSAT",
+   "secs": 0.2515,
+   "conflicts": 72,
+   "branches": []
+  },
+  {
+   "log2w": 140.523,
+   "dec": 200,
+   "res": "UNSAT",
+   "secs": 0.2326,
+   "conflicts": 79,
+   "branches": []
+  },
+  {
+   "log2w": 140.523,
+   "dec": 200,
+   "res": "UNSAT",
+   "secs": 0.2276,
+   "conflicts": 79,
+   "branches": []
+  },
+  {
+   "log2w": 140.523,
+   "dec": 200,
+   "res": "UNSAT",
+   "secs": 0.2531,
+   "conflicts": 73,
+   "branches": []
+  },
+  {
+   "log2w": 140.523,
+   "dec": 200,
+   "res": "UNSAT",
+   "secs": 0.2384,
+   "conflicts": 90,
+   "branches": []
+  },
+  {
+   "log2w": 140.523,
+   "dec": 200,
+   "res": "UNSAT",
+   "secs": 0.2258,
+   "conflicts": 67,
+   "branches": []
+  },
+  {
+   "log2w": 140.523,
+   "dec": 200,
+   "res": "UNSAT",
+   "secs": 0.2751,
+   "conflicts": 90,
+   "branches": []
+  },
+  {
+   "log2w": 140.523,
+   "dec": 200,
+   "res": "UNSAT",
+   "secs": 0.2979,
+   "conflicts": 90,
+   "branches": []
+  },
+  {
+   "log2w": 140.523,
+   "dec": 200,
+   "res": "UNSAT",
+   "secs": 0.2457,
+   "conflicts": 56,
+   "branches": []
+  },
+  {
+   "log2w": 140.523,
+   "dec": 200,
+   "res": "UNSAT",
+   "secs": 0.2288,
+   "conflicts": 85,
+   "branches": []
+  },
+  {
+   "log2w": 140.523,
+   "dec": 200,
+   "res": "UNSAT",
+   "secs": 0.3309,
+   "conflicts": 85,
+   "branches": []
+  },
+  {
+   "log2w": 140.523,
+   "dec": 200,
+   "res": "UNSAT",
+   "secs": 0.2645,
+   "conflicts": 91,
+   "branches": []
+  },
+  {
+   "log2w": 140.523,
+   "dec": 200,
+   "res": "UNSAT",
+   "secs": 0.197,
+   "conflicts": 67,
+   "branches": []
+  },
+  {
+   "log2w": 140.523,
+   "dec": 200,
+   "res": "UNSAT",
+   "secs": 0.2005,
+   "conflicts": 72,
+   "branches": []
+  },
+  {
+   "log2w": 140.523,
+   "dec": 200,
+   "res": "UNSAT",
+   "secs": 0.2114,
+   "conflicts": 35,
+   "branches": []
+  },
+  {
+   "log2w": 140.523,
+   "dec": 200,
+   "res": "UNSAT",
+   "secs": 0.2076,
+   "conflicts": 35,
+   "branches": []
+  },
+  {
+   "log2w": 140.523,
+   "dec": 200,
+   "res": "UNSAT",
+   "secs": 0.1697,
+   "conflicts": 46,
+   "branches": []
+  },
+  {
+   "log2w": 140.523,
+   "dec": 200,
+   "res": "UNSAT",
+   "secs": 0.1988,
+   "conflicts": 40,
+   "branches": []
+  },
+  {
+   "log2w": 140.523,
+   "dec": 200,
+   "res": "UNSAT",
+   "secs": 0.2159,
+   "conflicts": 40,
+   "branches": []
+  },
+  {
+   "log2w": 140.523,
+   "dec": 200,
+   "res": "UNSAT",
+   "secs": 0.2142,
+   "conflicts": 41,
+   "branches": []
+  },
+  {
+   "log2w": 140.523,
+   "dec": 200,
+   "res": "UNSAT",
+   "secs": 0.2079,
+   "conflicts": 37,
+   "branches": []
+  },
+  {
+   "log2w": 140.523,
+   "dec": 200,
+   "res": "UNSAT",
+   "secs": 0.2075,
+   "conflicts": 68,
+   "branches": []
+  },
+  {
+   "log2w": 140.523,
+   "dec": 200,
+   "res": "UNSAT",
+   "secs": 0.2666,
+   "conflicts": 41,
+   "branches": []
+  },
+  {
+   "log2w": 140.523,
+   "dec": 200,
+   "res": "UNSAT",
+   "secs": 0.213,
+   "conflicts": 35,
+   "branches": []
+  },
+  {
+   "log2w": 140.523,
+   "dec": 200,
+   "res": "UNSAT",
+   "secs": 0.2087,
+   "conflicts": 41,
+   "branches": []
+  },
+  {
+   "log2w": 140.523,
+   "dec": 200,
+   "res": "UNSAT",
+   "secs": 0.3445,
+   "conflicts": 61,
+   "branches": []
+  },
+  {
+   "log2w": 140.523,
+   "dec": 200,
+   "res": "UNSAT",
+   "secs": 0.3271,
+   "conflicts": 22,
+   "branches": []
+  },
+  {
+   "log2w": 140.523,
+   "dec": 200,
+   "res": "UNSAT",
+   "secs": 0.2282,
+   "conflicts": 22,
+   "branches": []
+  },
+  {
+   "log2w": 140.523,
+   "dec": 200,
+   "res": "UNSAT",
+   "secs": 0.2152,
+   "conflicts": 22,
+   "branches": []
+  },
+  {
+   "log2w": 140.523,
+   "dec": 200,
+   "res": "UNSAT",
+   "secs": 0.1911,
+   "conflicts": 18,
+   "branches": []
+  },
+  {
+   "log2w": 140.523,
+   "dec": 200,
+   "res": "UNSAT",
+   "secs": 0.2242,
+   "conflicts": 12,
+   "branches": []
+  },
+  {
+   "log2w": 140.523,
+   "dec": 200,
+   "res": "UNSAT",
+   "secs": 0.2626,
+   "conflicts": 43,
+   "branches": []
+  },
+  {
+   "log2w": 140.523,
+   "dec": 200,
+   "res": "UNSAT",
+   "secs": 0.229,
+   "conflicts": 34,
+   "branches": []
+  },
+  {
+   "log2w": 140.523,
+   "dec": 200,
+   "res": "UNSAT",
+   "secs": 0.2661,
+   "conflicts": 52,
+   "branches": []
+  },
+  {
+   "log2w": 140.523,
+   "dec": 200,
+   "res": "UNSAT",
+   "secs": 0.2156,
+   "conflicts": 13,
+   "branches": []
+  },
+  {
+   "log2w": 140.523,
+   "dec": 200,
+   "res": "UNSAT",
+   "secs": 0.2327,
+   "conflicts": 35,
+   "branches": []
+  },
+  {
+   "log2w": 140.523,
+   "dec": 200,
+   "res": "UNSAT",
+   "secs": 0.2292,
+   "conflicts": 17,
+   "branches": []
+  },
+  {
+   "log2w": 140.523,
+   "dec": 200,
+   "res": "UNSAT",
+   "secs": 0.2544,
+   "conflicts": 22,
+   "branches": []
+  },
+  {
+   "log2w": 140.523,
+   "dec": 200,
+   "res": "UNSAT",
+   "secs": 0.2067,
+   "conflicts": 14,
+   "branches": []
+  },
+  {
+   "log2w": 140.523,
+   "dec": 200,
+   "res": "UNSAT",
+   "secs": 0.2146,
+   "conflicts": 19,
+   "branches": []
+  },
+  {
+   "log2w": 140.523,
+   "dec": 200,
+   "res": "UNSAT",
+   "secs": 0.1879,
+   "conflicts": 15,
+   "branches": []
+  },
+  {
+   "log2w": 140.523,
+   "dec": 200,
+   "res": "UNSAT",
+   "secs": 0.209,
+   "conflicts": 15,
+   "branches": []
+  },
+  {
+   "log2w": 140.523,
+   "dec": 200,
+   "res": "UNSAT",
+   "secs": 0.1979,
+   "conflicts": 15,
+   "branches": []
+  },
+  {
+   "log2w": 140.523,
+   "dec": 200,
+   "res": "UNSAT",
+   "secs": 0.1756,
+   "conflicts": 15,
+   "branches": []
+  },
+  {
+   "log2w": 140.523,
+   "dec": 200,
+   "res": "UNSAT",
+   "secs": 0.1831,
+   "conflicts": 15,
+   "branches": []
+  },
+  {
+   "log2w": 140.523,
+   "dec": 200,
+   "res": "UNSAT",
+   "secs": 0.1743,
+   "conflicts": 18,
+   "branches": []
+  },
+  {
+   "log2w": 140.523,
+   "dec": 200,
+   "res": "UNSAT",
+   "secs": 0.1704,
+   "conflicts": 12,
+   "branches": []
+  },
+  {
+   "log2w": 140.523,
+   "dec": 200,
+   "res": "UNSAT",
+   "secs": 0.2054,
+   "conflicts": 12,
+   "branches": []
+  },
+  {
+   "log2w": 140.523,
+   "dec": 200,
+   "res": "UNSAT",
+   "secs": 0.1906,
+   "conflicts": 12,
+   "branches": []
+  },
+  {
+   "log2w": 140.523,
+   "dec": 200,
+   "res": "UNSAT",
+   "secs": 0.1555,
+   "conflicts": 16,
+   "branches": []
+  },
+  {
+   "log2w": 140.523,
+   "dec": 200,
+   "res": "UNSAT",
+   "secs": 0.2299,
+   "conflicts": 30,
+   "branches": []
+  },
+  {
+   "log2w": 140.523,
+   "dec": 200,
+   "res": "UNSAT",
+   "secs": 0.1896,
+   "conflicts": 39,
+   "branches": []
+  },
+  {
+   "log2w": 140.523,
+   "dec": 200,
+   "res": "UNSAT",
+   "secs": 0.1947,
+   "conflicts": 10,
+   "branches": []
+  },
+  {
+   "log2w": 140.523,
+   "dec": 200,
+   "res": "UNSAT",
+   "secs": 0.2081,
+   "conflicts": 9,
+   "branches": []
+  },
+  {
+   "log2w": 140.523,
+   "dec": 200,
+   "res": "UNSAT",
+   "secs": 0.2111,
+   "conflicts": 43,
+   "branches": []
+  },
+  {
+   "log2w": 140.523,
+   "dec": 200,
+   "res": "UNSAT",
+   "secs": 0.2022,
+   "conflicts": 41,
+   "branches": []
+  },
+  {
+   "log2w": 140.523,
+   "dec": 200,
+   "res": "UNSAT",
+   "secs": 0.1935,
+   "conflicts": 26,
+   "branches": []
+  },
+  {
+   "log2w": 140.523,
+   "dec": 200,
+   "res": "UNSAT",
+   "secs": 0.2213,
+   "conflicts": 40,
+   "branches": []
+  },
+  {
+   "log2w": 140.523,
+   "dec": 200,
+   "res": "UNSAT",
+   "secs": 0.2161,
+   "conflicts": 34,
+   "branches": []
+  },
+  {
+   "log2w": 140.523,
+   "dec": 200,
+   "res": "UNSAT",
+   "secs": 0.2216,
+   "conflicts": 29,
+   "branches": []
+  },
+  {
+   "log2w": 140.523,
+   "dec": 200,
+   "res": "UNSAT",
+   "secs": 0.1959,
+   "conflicts": 27,
+   "branches": []
+  },
+  {
+   "log2w": 140.523,
+   "dec": 200,
+   "res": "UNSAT",
+   "secs": 0.1998,
+   "conflicts": 48,
+   "branches": []
+  },
+  {
+   "log2w": 140.523,
+   "dec": 200,
+   "res": "UNSAT",
+   "secs": 0.1914,
+   "conflicts": 27,
+   "branches": []
+  },
+  {
+   "log2w": 140.523,
+   "dec": 200,
+   "res": "UNSAT",
+   "secs": 0.1763,
+   "conflicts": 50,
+   "branches": []
+  },
+  {
+   "log2w": 140.523,
+   "dec": 200,
+   "res": "UNSAT",
+   "secs": 0.1871,
+   "conflicts": 61,
+   "branches": []
+  },
+  {
+   "log2w": 140.523,
+   "dec": 200,
+   "res": "UNSAT",
+   "secs": 0.2124,
+   "conflicts": 26,
+   "branches": []
+  },
+  {
+   "log2w": 140.523,
+   "dec": 200,
+   "res": "UNSAT",
+   "secs": 0.2007,
+   "conflicts": 79,
+   "branches": []
+  },
+  {
+   "log2w": 140.523,
+   "dec": 200,
+   "res": "UNSAT",
+   "secs": 0.1512,
+   "conflicts": 29,
+   "branches": []
+  },
+  {
+   "log2w": 140.523,
+   "dec": 200,
+   "res": "UNSAT",
+   "secs": 0.1725,
+   "conflicts": 30,
+   "branches": []
+  },
+  {
+   "log2w": 140.523,
+   "dec": 200,
+   "res": "UNSAT",
+   "secs": 0.2033,
+   "conflicts": 28,
+   "branches": []
+  },
+  {
+   "log2w": 140.523,
+   "dec": 200,
+   "res": "UNSAT",
+   "secs": 0.1744,
+   "conflicts": 59,
+   "branches": []
+  },
+  {
+   "log2w": 140.523,
+   "dec": 200,
+   "res": "UNSAT",
+   "secs": 0.2063,
+   "conflicts": 41,
+   "branches": []
+  },
+  {
+   "log2w": 140.523,
+   "dec": 200,
+   "res": "UNSAT",
+   "secs": 0.2099,
+   "conflicts": 80,
+   "branches": []
+  },
+  {
+   "log2w": 140.523,
+   "dec": 200,
+   "res": "UNSAT",
+   "secs": 0.1527,
+   "conflicts": 81,
+   "branches": []
+  },
+  {
+   "log2w": 140.523,
+   "dec": 200,
+   "res": "UNSAT",
+   "secs": 0.2034,
+   "conflicts": 56,
+   "branches": []
+  },
+  {
+   "log2w": 140.523,
+   "dec": 200,
+   "res": "UNSAT",
+   "secs": 0.1724,
+   "conflicts": 21,
+   "branches": []
+  },
+  {
+   "log2w": 140.523,
+   "dec": 200,
+   "res": "UNSAT",
+   "secs": 0.1899,
+   "conflicts": 21,
+   "branches": []
+  },
+  {
+   "log2w": 140.523,
+   "dec": 200,
+   "res": "UNSAT",
+   "secs": 0.1685,
+   "conflicts": 22,
+   "branches": []
+  },
+  {
+   "log2w": 140.523,
+   "dec": 200,
+   "res": "UNSAT",
+   "secs": 0.1706,
+   "conflicts": 137,
+   "branches": []
+  },
+  {
+   "log2w": 140.523,
+   "dec": 200,
+   "res": "UNSAT",
+   "secs": 0.1635,
+   "conflicts": 131,
+   "branches": []
+  },
+  {
+   "log2w": 140.523,
+   "dec": 200,
+   "res": "UNSAT",
+   "secs": 0.1683,
+   "conflicts": 24,
+   "branches": []
+  },
+  {
+   "log2w": 140.523,
+   "dec": 200,
+   "res": "UNSAT",
+   "secs": 0.1715,
+   "conflicts": 24,
+   "branches": []
+  },
+  {
+   "log2w": 140.523,
+   "dec": 200,
+   "res": "UNSAT",
+   "secs": 0.1993,
+   "conflicts": 20,
+   "branches": []
+  },
+  {
+   "log2w": 140.523,
+   "dec": 200,
+   "res": "UNSAT",
+   "secs": 0.1965,
+   "conflicts": 22,
+   "branches": []
+  },
+  {
+   "log2w": 140.523,
+   "dec": 200,
+   "res": "UNSAT",
+   "secs": 0.1744,
+   "conflicts": 22,
+   "branches": []
+  },
+  {
+   "log2w": 140.523,
+   "dec": 200,
+   "res": "UNSAT",
+   "secs": 0.1756,
+   "conflicts": 7,
+   "branches": []
+  }
+ ]
+}

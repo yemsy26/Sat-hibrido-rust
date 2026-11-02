@@ -1,0 +1,53 @@
+{
+ "cnf": "est_r55_43_d18_w18-24.cnf",
+ "cubes": [
+  {
+   "cnf": "cube_0.cnf",
+   "solve_s": 5.518,
+   "result": "UNSAT",
+   "proof_bytes": 322921,
+   "proof_lemmas": 6057,
+   "lrat_check_s": 8.146,
+   "lrat_verified": true,
+   "drat_trim_s": 8.917,
+   "drat_verified": true,
+   "cube_len": 60
+  },
+  {
+   "cnf": "cube_1.cnf",
+   "solve_s": 5.749,
+   "result": "UNSAT",
+   "proof_bytes": 319635,
+   "proof_lemmas": 6011,
+   "lrat_check_s": 8.635,
+   "lrat_verified": true,
+   "drat_trim_s": 8.533,
+   "drat_verified": true,
+   "cube_len": 60
+  },
+  {
+   "cnf": "cube_2.cnf",
+   "solve_s": 5.313,
+   "result": "UNSAT",
+   "proof_bytes": 329629,
+   "proof_lemmas": 6127,
+   "lrat_check_s": 12.437,
+   "lrat_verified": true,
+   "drat_trim_s": 19.036,
+   "drat_verified": true,
+   "cube_len": 60
+  },
+  {
+   "cnf": "cube_3.cnf",
+   "solve_s": 13.705,
+   "result": "UNSAT",
+   "proof_bytes": 308023,
+   "proof_lemmas": 5662,
+   "lrat_check_s": 16.579,
+   "lrat_verified": true,
+   "drat_trim_s": 18.897,
+   "drat_verified": true,
+   "cube_len": 60
+  }
+ ]
+}

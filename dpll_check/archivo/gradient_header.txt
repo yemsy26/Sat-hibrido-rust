@@ -1,0 +1,5 @@
+// Fase 8: Adam proyectado sobre [0,1], con pérdida suma de productos de falsedad.
+// Gradientes analíticos con prefijos/sufijos: O(V+L+C) por época, sin división por factores.
+// La verificación del modelo redondeado es obligatoria, incluso con pérdida numérica cero.
+// Agotar épocas devuelve UNKNOWN; no converger no constituye un certificado UNSAT.
+// No se garantiza convergencia global, completitud ni un aumento de escalabilidad de 1000×.

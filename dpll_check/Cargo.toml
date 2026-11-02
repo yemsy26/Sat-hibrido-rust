@@ -1,0 +1,65 @@
+[package]
+name = "dpll_check"
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+default-run = "motor"
+autobins = false
+
+[workspace]
+members = ["crates/chronos-vfs", "crates/motor-ffi"]
+
+[lib]
+name = "motor_core"
+path = "src/lib.rs"
+
+# Comando unico para formulas generales; CPU pura, sin features.
+[[bin]]
+name = "motor"
+path = "src/bin/motor.rs"
+
+# Coste de emitir la traza VeriPB.
+[[bin]]
+name = "certify"
+path = "src/bin/certify.rs"
+
+# Estres de la capa de paridad.
+[[bin]]
+name = "parity_stress"
+path = "src/bin/parity_stress.rs"
+
+# Alias de `motor k43`; el lanzador del asedio busca este proceso por nombre.
+[[bin]]
+name = "gpu_ramsey43"
+path = "src/bin/gpu_ramsey43.rs"
+required-features = ["neuro-trt"]
+
+# Alias de `motor bench`: banco de validación sobre R(s,t) conocidos; CPU pura, sin features.
+[[bin]]
+name = "ramsey_bench"
+path = "src/bin/ramsey_bench.rs"
+
+[dependencies]
+# Anillo en RAM y zstd para la traza. Copia de yemsy26/Chronos-VFS en 6bdbec0.
+chronos-vfs = { path = "crates/chronos-vfs" }
+# Driver CUDA y NVRTC se cargan en ejecucion; build.rs elige el Toolkit segun MSVC.
+cudarc = { version = "0.19.10", optional = true, default-features = false, features = ["std", "driver", "nvrtc", "dynamic-loading", "cuda-12060"] }
+libloading = { version = "0.9.0", optional = true }
+
+[features]
+gpu = ["dep:cudarc"]
+# Mock CUDA de integración del puente, sin engine TensorRT ni modelo entrenado.
+neuro-mock = ["gpu", "dep:libloading"]
+# Inferencia TensorRT real; requiere SDK nativo sólo al activar esta feature.
+neuro-trt = ["gpu", "dep:libloading"]
+# Muestreo residente y exportación por lotes; no requiere el puente mock.
+neuro-dataset = ["gpu"]
+
+[profile.release]
+debug = false
+
+# Los DFS de referencia son CPU pura; sin optimizar, tests/ramsey_known.rs tarda minutos.
+# Se conservan debug-assertions y overflow-checks del perfil de test.
+[profile.test]
+opt-level = 3
+

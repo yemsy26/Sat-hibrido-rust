@@ -1,0 +1,240 @@
+{"instance": "00f2eb377986e7decbc863931680a3b2.cnf", "solver": "kissat", "seconds": 0.024, "verdict": "UNSAT", "limit": 120}
+{"instance": "00f2eb377986e7decbc863931680a3b2.cnf", "solver": "cadical", "seconds": 0.158, "verdict": "UNSAT", "limit": 120}
+{"instance": "008e7716c69009090ff6bd0048dc55f8.cnf", "solver": "cadical", "seconds": 16.763, "verdict": "UNSAT", "limit": 120}
+{"instance": "008e7716c69009090ff6bd0048dc55f8.cnf", "solver": "kissat", "seconds": 17.181, "verdict": "UNSAT", "limit": 120}
+{"instance": "02066c116dbacc40ec5cca2067db26c0.cnf", "solver": "cadical", "seconds": 3.571, "verdict": "UNSAT", "limit": 120}
+{"instance": "02066c116dbacc40ec5cca2067db26c0.cnf", "solver": "kissat", "seconds": 5.136, "verdict": "UNSAT", "limit": 120}
+{"instance": "037c423f56548082b1935e88c48ffdda.cnf", "solver": "kissat", "seconds": 0.264, "verdict": "SAT", "limit": 120, "model_ok": true}
+{"instance": "037c423f56548082b1935e88c48ffdda.cnf", "solver": "cadical", "seconds": 0.288, "verdict": "SAT", "limit": 120, "model_ok": true}
+{"instance": "06b138e8a6da806e88ac7da2919cef30.cnf", "solver": "cadical", "seconds": 52.377, "verdict": "UNSAT", "limit": 120}
+{"instance": "06b138e8a6da806e88ac7da2919cef30.cnf", "solver": "kissat", "seconds": 120, "verdict": "TIMEOUT", "limit": 120}
+{"instance": "0ae0c5a4fb9001d63669a0aa5b592167.cnf", "solver": "kissat", "seconds": 120, "verdict": "TIMEOUT", "limit": 120}
+{"instance": "0ae0c5a4fb9001d63669a0aa5b592167.cnf", "solver": "cadical", "seconds": 120, "verdict": "TIMEOUT", "limit": 120}
+{"instance": "1153a473e1d5dd21ccd33189d594a4aa.cnf", "solver": "kissat", "seconds": 120, "verdict": "TIMEOUT", "limit": 120}
+{"instance": "1153a473e1d5dd21ccd33189d594a4aa.cnf", "solver": "cadical", "seconds": 120, "verdict": "TIMEOUT", "limit": 120}
+{"instance": "189e5991b041a89700513106988e720d.cnf", "solver": "kissat", "seconds": 120, "verdict": "TIMEOUT", "limit": 120}
+{"instance": "189e5991b041a89700513106988e720d.cnf", "solver": "cadical", "seconds": 120, "verdict": "TIMEOUT", "limit": 120}
+{"instance": "1aa7cd96ab1f7bf58984deccf8362ab4.cnf", "solver": "kissat", "seconds": 0.024, "verdict": "UNSAT", "limit": 120}
+{"instance": "1aa7cd96ab1f7bf58984deccf8362ab4.cnf", "solver": "cadical", "seconds": 1.396, "verdict": "UNSAT", "limit": 120}
+{"instance": "1a20649a8c79d6675d934cec271d573f.cnf", "solver": "kissat", "seconds": 120, "verdict": "TIMEOUT", "limit": 120}
+{"instance": "1a20649a8c79d6675d934cec271d573f.cnf", "solver": "cadical", "seconds": 120, "verdict": "TIMEOUT", "limit": 120}
+{"instance": "21bde0ebb111c637a1ae8789827b0b73.cnf", "solver": "kissat", "seconds": 3.189, "verdict": "UNSAT", "limit": 120}
+{"instance": "1f215812371f0c428eb1f1e51f9f23d7.cnf", "solver": "kissat", "seconds": 120, "verdict": "TIMEOUT", "limit": 120}
+{"instance": "246afd75cb97a21144f368c00252a656.cnf", "solver": "kissat", "seconds": 0.643, "verdict": "UNSAT", "limit": 120}
+{"instance": "1f215812371f0c428eb1f1e51f9f23d7.cnf", "solver": "cadical", "seconds": 120, "verdict": "TIMEOUT", "limit": 120}
+{"instance": "21bde0ebb111c637a1ae8789827b0b73.cnf", "solver": "cadical", "seconds": 120, "verdict": "TIMEOUT", "limit": 120}
+{"instance": "246afd75cb97a21144f368c00252a656.cnf", "solver": "cadical", "seconds": 120, "verdict": "TIMEOUT", "limit": 120}
+{"instance": "29bab0de14e56e526be9683131005cb2.cnf", "solver": "kissat", "seconds": 1.549, "verdict": "SAT", "limit": 120, "model_ok": true}
+{"instance": "262009b8df6350761c7dfc8761f0af79.cnf", "solver": "kissat", "seconds": 120, "verdict": "TIMEOUT", "limit": 120}
+{"instance": "29bab0de14e56e526be9683131005cb2.cnf", "solver": "cadical", "seconds": 4.81, "verdict": "SAT", "limit": 120, "model_ok": true}
+{"instance": "2d0c041c0fe72dc32527bfbf34f63e61.cnf", "solver": "kissat", "seconds": 1.387, "verdict": "SAT", "limit": 120, "model_ok": true}
+{"instance": "262009b8df6350761c7dfc8761f0af79.cnf", "solver": "cadical", "seconds": 120, "verdict": "TIMEOUT", "limit": 120}
+{"instance": "2d0c041c0fe72dc32527bfbf34f63e61.cnf", "solver": "cadical", "seconds": 17.425, "verdict": "SAT", "limit": 120, "model_ok": true}
+{"instance": "37d40a1092b58ad28285b9453872d211.cnf", "solver": "kissat", "seconds": 6.937, "verdict": "UNSAT", "limit": 120}
+{"instance": "328da7966b09b2f6e99c93c4e877fbff.cnf", "solver": "kissat", "seconds": 120, "verdict": "TIMEOUT", "limit": 120}
+{"instance": "328da7966b09b2f6e99c93c4e877fbff.cnf", "solver": "cadical", "seconds": 120, "verdict": "TIMEOUT", "limit": 120}
+{"instance": "396245861b331d45e1345bd43fe352e2.cnf", "solver": "kissat", "seconds": 29.023, "verdict": "SAT", "limit": 120, "model_ok": true}
+{"instance": "396245861b331d45e1345bd43fe352e2.cnf", "solver": "cadical", "seconds": 36.368, "verdict": "SAT", "limit": 120, "model_ok": true}
+{"instance": "431bfb466be51ecd86b321b5cbce6d3c.cnf", "solver": "kissat", "seconds": 0.326, "verdict": "UNSAT", "limit": 120}
+{"instance": "431bfb466be51ecd86b321b5cbce6d3c.cnf", "solver": "cadical", "seconds": 0.614, "verdict": "UNSAT", "limit": 120}
+{"instance": "44b249f51321a2bf38f730534b781bec.cnf", "solver": "kissat", "seconds": 0.086, "verdict": "SAT", "limit": 120, "model_ok": true}
+{"instance": "44b249f51321a2bf38f730534b781bec.cnf", "solver": "cadical", "seconds": 0.065, "verdict": "SAT", "limit": 120, "model_ok": true}
+{"instance": "4029fbae284eaf924b37b6f43d3a67fb.cnf", "solver": "kissat", "seconds": 26.069, "verdict": "UNSAT", "limit": 120}
+{"instance": "37d40a1092b58ad28285b9453872d211.cnf", "solver": "cadical", "seconds": 120, "verdict": "TIMEOUT", "limit": 120}
+{"instance": "4029fbae284eaf924b37b6f43d3a67fb.cnf", "solver": "cadical", "seconds": 120, "verdict": "TIMEOUT", "limit": 120}
+{"instance": "4d2f74ef97b6d40ebd71f85dcb75c543.cnf", "solver": "kissat", "seconds": 120, "verdict": "TIMEOUT", "limit": 120}
+{"instance": "4d2f74ef97b6d40ebd71f85dcb75c543.cnf", "solver": "cadical", "seconds": 120, "verdict": "TIMEOUT", "limit": 120}
+{"instance": "4fe42891b004d7425631a8edb4252d3f.cnf", "solver": "kissat", "seconds": 120, "verdict": "TIMEOUT", "limit": 120}
+{"instance": "4fe42891b004d7425631a8edb4252d3f.cnf", "solver": "cadical", "seconds": 120, "verdict": "TIMEOUT", "limit": 120}
+{"instance": "587150fb7b12a6b5dd7e4a9446b9713b.cnf", "solver": "kissat", "seconds": 0.064, "verdict": "SAT", "limit": 120, "model_ok": true}
+{"instance": "587150fb7b12a6b5dd7e4a9446b9713b.cnf", "solver": "cadical", "seconds": 0.037, "verdict": "SAT", "limit": 120, "model_ok": true}
+{"instance": "558ce551d2b933b7a5f1c7d2a6044930.cnf", "solver": "kissat", "seconds": 115.559, "verdict": "UNSAT", "limit": 120}
+{"instance": "63159b6b10c3d6832bd5944e05d78b11.cnf", "solver": "cadical", "seconds": 13.579, "verdict": "SAT", "limit": 120, "model_ok": true}
+{"instance": "558ce551d2b933b7a5f1c7d2a6044930.cnf", "solver": "cadical", "seconds": 120, "verdict": "TIMEOUT", "limit": 120}
+{"instance": "63159b6b10c3d6832bd5944e05d78b11.cnf", "solver": "kissat", "seconds": 120, "verdict": "TIMEOUT", "limit": 120}
+{"instance": "6aacae96461cb65176942b6dc88ea470.cnf", "solver": "kissat", "seconds": 120, "verdict": "TIMEOUT", "limit": 120}
+{"instance": "6aacae96461cb65176942b6dc88ea470.cnf", "solver": "cadical", "seconds": 120, "verdict": "TIMEOUT", "limit": 120}
+{"instance": "711ff7681711949f44b07a0d530dc729.cnf", "solver": "kissat", "seconds": 120, "verdict": "TIMEOUT", "limit": 120}
+{"instance": "711ff7681711949f44b07a0d530dc729.cnf", "solver": "cadical", "seconds": 120, "verdict": "TIMEOUT", "limit": 120}
+{"instance": "71cf538aa0751d27f144de9c8d82e458.cnf", "solver": "kissat", "seconds": 120, "verdict": "TIMEOUT", "limit": 120}
+{"instance": "71cf538aa0751d27f144de9c8d82e458.cnf", "solver": "cadical", "seconds": 120, "verdict": "TIMEOUT", "limit": 120}
+{"instance": "7aaf3275cbe217044ef305f0a1ca8eb5.cnf", "solver": "kissat", "seconds": 1.167, "verdict": "UNSAT", "limit": 120}
+{"instance": "751afd7ddf8f242ed7bd93517ba82149.cnf", "solver": "kissat", "seconds": 120, "verdict": "TIMEOUT", "limit": 120}
+{"instance": "751afd7ddf8f242ed7bd93517ba82149.cnf", "solver": "cadical", "seconds": 120, "verdict": "TIMEOUT", "limit": 120}
+{"instance": "7aaf3275cbe217044ef305f0a1ca8eb5.cnf", "solver": "cadical", "seconds": 120, "verdict": "TIMEOUT", "limit": 120}
+{"instance": "81d2158d506ea1049708837460b9387e.cnf", "solver": "kissat", "seconds": 120, "verdict": "TIMEOUT", "limit": 120}
+{"instance": "81d2158d506ea1049708837460b9387e.cnf", "solver": "cadical", "seconds": 120, "verdict": "TIMEOUT", "limit": 120}
+{"instance": "835ac60ca83af6f334b64b61c4ad345b.cnf", "solver": "kissat", "seconds": 120, "verdict": "TIMEOUT", "limit": 120}
+{"instance": "8bcd3f3e269fa3c9516667b626d61602.cnf", "solver": "kissat", "seconds": 49.197, "verdict": "SAT", "limit": 120, "model_ok": true}
+{"instance": "8d458780fb74c28c01a5fe89990ad521.cnf", "solver": "kissat", "seconds": 3.598, "verdict": "UNSAT", "limit": 120}
+{"instance": "8d458780fb74c28c01a5fe89990ad521.cnf", "solver": "cadical", "seconds": 13.209, "verdict": "UNSAT", "limit": 120}
+{"instance": "835ac60ca83af6f334b64b61c4ad345b.cnf", "solver": "cadical", "seconds": 120, "verdict": "TIMEOUT", "limit": 120}
+{"instance": "8bcd3f3e269fa3c9516667b626d61602.cnf", "solver": "cadical", "seconds": 120, "verdict": "TIMEOUT", "limit": 120}
+{"instance": "91b88d172a08e2a57c189bddff51bfd5.cnf", "solver": "kissat", "seconds": 120, "verdict": "TIMEOUT", "limit": 120}
+{"instance": "91b88d172a08e2a57c189bddff51bfd5.cnf", "solver": "cadical", "seconds": 120, "verdict": "TIMEOUT", "limit": 120}
+{"instance": "953e9ff735bdf5ada27b0ab2b908b6af.cnf", "solver": "kissat", "seconds": 120, "verdict": "TIMEOUT", "limit": 120}
+{"instance": "96e01064ac3b644143278c21859e201f.cnf", "solver": "kissat", "seconds": 22.65, "verdict": "SAT", "limit": 120, "model_ok": true}
+{"instance": "953e9ff735bdf5ada27b0ab2b908b6af.cnf", "solver": "cadical", "seconds": 120, "verdict": "TIMEOUT", "limit": 120}
+{"instance": "9de6ddddf7fde06bf2efd955e2bd1a83.cnf", "solver": "cadical", "seconds": 5.578, "verdict": "SAT", "limit": 120, "model_ok": true}
+{"instance": "9de6ddddf7fde06bf2efd955e2bd1a83.cnf", "solver": "kissat", "seconds": 78.246, "verdict": "SAT", "limit": 120, "model_ok": true}
+{"instance": "96e01064ac3b644143278c21859e201f.cnf", "solver": "cadical", "seconds": 120, "verdict": "TIMEOUT", "limit": 120}
+{"instance": "a18b6fbdfee43c007e07dedf15477797.cnf", "solver": "cadical", "seconds": 76.443, "verdict": "SAT", "limit": 120, "model_ok": true}
+{"instance": "a18b6fbdfee43c007e07dedf15477797.cnf", "solver": "kissat", "seconds": 120, "verdict": "TIMEOUT", "limit": 120}
+{"instance": "a552a058e6376a36b1f1b2724f228364.cnf", "solver": "kissat", "seconds": 120, "verdict": "TIMEOUT", "limit": 120}
+{"instance": "a552a058e6376a36b1f1b2724f228364.cnf", "solver": "cadical", "seconds": 120, "verdict": "TIMEOUT", "limit": 120}
+{"instance": "a8dc92a9c0434576b47c82c94ab5c446.cnf", "solver": "kissat", "seconds": 120, "verdict": "TIMEOUT", "limit": 120}
+{"instance": "a8dc92a9c0434576b47c82c94ab5c446.cnf", "solver": "cadical", "seconds": 120, "verdict": "TIMEOUT", "limit": 120}
+{"instance": "af1e84bc2ab44d87d1c4c0cbf9e601c5.cnf", "solver": "kissat", "seconds": 11.099, "verdict": "UNSAT", "limit": 120}
+{"instance": "aa4a861240c0c39b5aa44602133ae5e1.cnf", "solver": "kissat", "seconds": 120, "verdict": "TIMEOUT", "limit": 120}
+{"instance": "b2145c28dbed385329ea73a06d9c519a.cnf", "solver": "kissat", "seconds": 5.384, "verdict": "UNSAT", "limit": 120}
+{"instance": "aa4a861240c0c39b5aa44602133ae5e1.cnf", "solver": "cadical", "seconds": 120, "verdict": "TIMEOUT", "limit": 120}
+{"instance": "af1e84bc2ab44d87d1c4c0cbf9e601c5.cnf", "solver": "cadical", "seconds": 120, "verdict": "TIMEOUT", "limit": 120}
+{"instance": "b2145c28dbed385329ea73a06d9c519a.cnf", "solver": "cadical", "seconds": 120, "verdict": "TIMEOUT", "limit": 120}
+{"instance": "b86f2425cafeb1239d65bd529e372e02.cnf", "solver": "kissat", "seconds": 120, "verdict": "TIMEOUT", "limit": 120}
+{"instance": "c0069efa0c924e416878d9426f1ef92e.cnf", "solver": "cadical", "seconds": 61.849, "verdict": "SAT", "limit": 120, "model_ok": true}
+{"instance": "b86f2425cafeb1239d65bd529e372e02.cnf", "solver": "cadical", "seconds": 120, "verdict": "TIMEOUT", "limit": 120}
+{"instance": "c0069efa0c924e416878d9426f1ef92e.cnf", "solver": "kissat", "seconds": 120, "verdict": "TIMEOUT", "limit": 120}
+{"instance": "c9af5b23c87350f5d817acc9ca7b69bb.cnf", "solver": "kissat", "seconds": 43.38, "verdict": "UNSAT", "limit": 120}
+{"instance": "c9af5b23c87350f5d817acc9ca7b69bb.cnf", "solver": "cadical", "seconds": 120, "verdict": "TIMEOUT", "limit": 120}
+{"instance": "cd118ff851f95661b2a3adfc3e393c74.cnf", "solver": "kissat", "seconds": 120, "verdict": "TIMEOUT", "limit": 120}
+{"instance": "cd118ff851f95661b2a3adfc3e393c74.cnf", "solver": "cadical", "seconds": 120, "verdict": "TIMEOUT", "limit": 120}
+{"instance": "cfc53adcc8ed18ca161bb6f8bc02b237.cnf", "solver": "kissat", "seconds": 92.988, "verdict": "UNSAT", "limit": 120}
+{"instance": "cfc53adcc8ed18ca161bb6f8bc02b237.cnf", "solver": "cadical", "seconds": 120, "verdict": "TIMEOUT", "limit": 120}
+{"instance": "d1f4348ad66cae01386777daae51c024.cnf", "solver": "kissat", "seconds": 120, "verdict": "TIMEOUT", "limit": 120}
+{"instance": "d84a89fb1bc1ff37dc4737867257b290.cnf", "solver": "kissat", "seconds": 74.757, "verdict": "SAT", "limit": 120, "model_ok": true}
+{"instance": "d1f4348ad66cae01386777daae51c024.cnf", "solver": "cadical", "seconds": 120, "verdict": "TIMEOUT", "limit": 120}
+{"instance": "dd169198070f9aa35015de65e8209a05.cnf", "solver": "kissat", "seconds": 2.436, "verdict": "UNSAT", "limit": 120}
+{"instance": "d84a89fb1bc1ff37dc4737867257b290.cnf", "solver": "cadical", "seconds": 14.372, "verdict": "SAT", "limit": 120, "model_ok": true}
+{"instance": "dd169198070f9aa35015de65e8209a05.cnf", "solver": "cadical", "seconds": 120, "verdict": "TIMEOUT", "limit": 120}
+{"instance": "e46bdd62b3789b64f7fbb3bd6c99484e.cnf", "solver": "kissat", "seconds": 120, "verdict": "TIMEOUT", "limit": 120}
+{"instance": "e46bdd62b3789b64f7fbb3bd6c99484e.cnf", "solver": "cadical", "seconds": 120, "verdict": "TIMEOUT", "limit": 120}
+{"instance": "ed76b075cdf07435c6e4f6203dd10cb7.cnf", "solver": "cadical", "seconds": 50.761, "verdict": "SAT", "limit": 120, "model_ok": true}
+{"instance": "ed76b075cdf07435c6e4f6203dd10cb7.cnf", "solver": "kissat", "seconds": 120, "verdict": "TIMEOUT", "limit": 120}
+{"instance": "f448874997bae64bd455fb00309dc738.cnf", "solver": "kissat", "seconds": 5.072, "verdict": "SAT", "limit": 120, "model_ok": true}
+{"instance": "f08b3567642ea029452fff2c1d10c132.cnf", "solver": "kissat", "seconds": 120, "verdict": "TIMEOUT", "limit": 120}
+{"instance": "fab0db1ab0dd5baa3215aab51ab69355.cnf", "solver": "kissat", "seconds": 0.902, "verdict": "SAT", "limit": 120, "model_ok": true}
+{"instance": "f08b3567642ea029452fff2c1d10c132.cnf", "solver": "cadical", "seconds": 120, "verdict": "TIMEOUT", "limit": 120}
+{"instance": "fe19a31b76cbba5901e16ce36c7578ed.cnf", "solver": "kissat", "seconds": 0.015, "verdict": "UNSAT", "limit": 120}
+{"instance": "fe19a31b76cbba5901e16ce36c7578ed.cnf", "solver": "cadical", "seconds": 0.022, "verdict": "UNSAT", "limit": 120}
+{"instance": "fab0db1ab0dd5baa3215aab51ab69355.cnf", "solver": "cadical", "seconds": 64.408, "verdict": "SAT", "limit": 120, "model_ok": true}
+{"instance": "f448874997bae64bd455fb00309dc738.cnf", "solver": "cadical", "seconds": 120, "verdict": "TIMEOUT", "limit": 120}
+{"instance": "00f2eb377986e7decbc863931680a3b2.cnf", "solver": "motor", "seconds": 0.039, "verdict": "UNSAT", "limit": 120}
+{"instance": "037c423f56548082b1935e88c48ffdda.cnf", "solver": "motor", "seconds": 0.238, "verdict": "SAT", "limit": 120, "model_ok": true}
+{"instance": "02066c116dbacc40ec5cca2067db26c0.cnf", "solver": "motor", "seconds": 23.451, "verdict": "UNSAT", "limit": 120}
+{"instance": "008e7716c69009090ff6bd0048dc55f8.cnf", "solver": "motor", "seconds": 34.368, "verdict": "UNSAT", "limit": 120}
+{"instance": "06b138e8a6da806e88ac7da2919cef30.cnf", "solver": "motor", "seconds": 120, "verdict": "TIMEOUT", "limit": 120}
+{"instance": "0ae0c5a4fb9001d63669a0aa5b592167.cnf", "solver": "motor", "seconds": 120, "verdict": "TIMEOUT", "limit": 120}
+{"instance": "1aa7cd96ab1f7bf58984deccf8362ab4.cnf", "solver": "motor", "seconds": 0.042, "verdict": "UNSAT", "limit": 120}
+{"instance": "1153a473e1d5dd21ccd33189d594a4aa.cnf", "solver": "motor", "seconds": 120, "verdict": "TIMEOUT", "limit": 120}
+{"instance": "21bde0ebb111c637a1ae8789827b0b73.cnf", "solver": "motor", "seconds": 0.133, "verdict": "UNSAT", "limit": 120}
+{"instance": "246afd75cb97a21144f368c00252a656.cnf", "solver": "motor", "seconds": 0.021, "verdict": "UNSAT", "limit": 120}
+{"instance": "189e5991b041a89700513106988e720d.cnf", "solver": "motor", "seconds": 120, "verdict": "TIMEOUT", "limit": 120}
+{"instance": "29bab0de14e56e526be9683131005cb2.cnf", "solver": "motor", "seconds": 22.554, "verdict": "SAT", "limit": 120, "model_ok": true}
+{"instance": "2d0c041c0fe72dc32527bfbf34f63e61.cnf", "solver": "motor", "seconds": 47.032, "verdict": "SAT", "limit": 120, "model_ok": true}
+{"instance": "1a20649a8c79d6675d934cec271d573f.cnf", "solver": "motor", "seconds": 120, "verdict": "TIMEOUT", "limit": 120}
+{"instance": "37d40a1092b58ad28285b9453872d211.cnf", "solver": "motor", "seconds": 0.027, "verdict": "UNSAT", "limit": 120}
+{"instance": "1f215812371f0c428eb1f1e51f9f23d7.cnf", "solver": "motor", "seconds": 120, "verdict": "TIMEOUT", "limit": 120}
+{"instance": "4029fbae284eaf924b37b6f43d3a67fb.cnf", "solver": "motor", "seconds": 0.136, "verdict": "UNSAT", "limit": 120}
+{"instance": "431bfb466be51ecd86b321b5cbce6d3c.cnf", "solver": "motor", "seconds": 0.745, "verdict": "UNSAT", "limit": 120}
+{"instance": "44b249f51321a2bf38f730534b781bec.cnf", "solver": "motor", "seconds": 0.077, "verdict": "SAT", "limit": 120, "model_ok": true}
+{"instance": "4d2f74ef97b6d40ebd71f85dcb75c543.cnf", "solver": "motor", "seconds": 0.024, "verdict": "UNSAT", "limit": 120}
+{"instance": "262009b8df6350761c7dfc8761f0af79.cnf", "solver": "motor", "seconds": 120, "verdict": "TIMEOUT", "limit": 120}
+{"instance": "558ce551d2b933b7a5f1c7d2a6044930.cnf", "solver": "motor", "seconds": 0.137, "verdict": "UNSAT", "limit": 120}
+{"instance": "587150fb7b12a6b5dd7e4a9446b9713b.cnf", "solver": "motor", "seconds": 0.046, "verdict": "SAT", "limit": 120, "model_ok": true}
+{"instance": "63159b6b10c3d6832bd5944e05d78b11.cnf", "solver": "motor", "seconds": 21.951, "verdict": "SAT", "limit": 120, "model_ok": true}
+{"instance": "328da7966b09b2f6e99c93c4e877fbff.cnf", "solver": "motor", "seconds": 120, "verdict": "TIMEOUT", "limit": 120}
+{"instance": "396245861b331d45e1345bd43fe352e2.cnf", "solver": "motor", "seconds": 120, "verdict": "TIMEOUT", "limit": 120}
+{"instance": "4fe42891b004d7425631a8edb4252d3f.cnf", "solver": "motor", "seconds": 120, "verdict": "TIMEOUT", "limit": 120}
+{"instance": "6aacae96461cb65176942b6dc88ea470.cnf", "solver": "motor", "seconds": 120, "verdict": "TIMEOUT", "limit": 120}
+{"instance": "7aaf3275cbe217044ef305f0a1ca8eb5.cnf", "solver": "motor", "seconds": 0.065, "verdict": "UNSAT", "limit": 120}
+{"instance": "711ff7681711949f44b07a0d530dc729.cnf", "solver": "motor", "seconds": 120, "verdict": "TIMEOUT", "limit": 120}
+{"instance": "835ac60ca83af6f334b64b61c4ad345b.cnf", "solver": "motor", "seconds": 0.015, "verdict": "UNSAT", "limit": 120}
+{"instance": "71cf538aa0751d27f144de9c8d82e458.cnf", "solver": "motor", "seconds": 120, "verdict": "TIMEOUT", "limit": 120}
+{"instance": "751afd7ddf8f242ed7bd93517ba82149.cnf", "solver": "motor", "seconds": 120, "verdict": "TIMEOUT", "limit": 120}
+{"instance": "8d458780fb74c28c01a5fe89990ad521.cnf", "solver": "motor", "seconds": 40.315, "verdict": "UNSAT", "limit": 120}
+{"instance": "81d2158d506ea1049708837460b9387e.cnf", "solver": "motor", "seconds": 120, "verdict": "TIMEOUT", "limit": 120}
+{"instance": "96e01064ac3b644143278c21859e201f.cnf", "solver": "motor", "seconds": 10.574, "verdict": "SAT", "limit": 120, "model_ok": true}
+{"instance": "8bcd3f3e269fa3c9516667b626d61602.cnf", "solver": "motor", "seconds": 120, "verdict": "TIMEOUT", "limit": 120}
+{"instance": "91b88d172a08e2a57c189bddff51bfd5.cnf", "solver": "motor", "seconds": 120, "verdict": "TIMEOUT", "limit": 120}
+{"instance": "953e9ff735bdf5ada27b0ab2b908b6af.cnf", "solver": "motor", "seconds": 120, "verdict": "TIMEOUT", "limit": 120}
+{"instance": "9de6ddddf7fde06bf2efd955e2bd1a83.cnf", "solver": "motor", "seconds": 120, "verdict": "TIMEOUT", "limit": 120}
+{"instance": "a18b6fbdfee43c007e07dedf15477797.cnf", "solver": "motor", "seconds": 120, "verdict": "TIMEOUT", "limit": 120}
+{"instance": "af1e84bc2ab44d87d1c4c0cbf9e601c5.cnf", "solver": "motor", "seconds": 0.041, "verdict": "UNSAT", "limit": 120}
+{"instance": "b2145c28dbed385329ea73a06d9c519a.cnf", "solver": "motor", "seconds": 0.051, "verdict": "UNSAT", "limit": 120}
+{"instance": "a552a058e6376a36b1f1b2724f228364.cnf", "solver": "motor", "seconds": 120, "verdict": "TIMEOUT", "limit": 120}
+{"instance": "a8dc92a9c0434576b47c82c94ab5c446.cnf", "solver": "motor", "seconds": 120, "verdict": "TIMEOUT", "limit": 120}
+{"instance": "c9af5b23c87350f5d817acc9ca7b69bb.cnf", "solver": "motor", "seconds": 0.024, "verdict": "UNSAT", "limit": 120}
+{"instance": "aa4a861240c0c39b5aa44602133ae5e1.cnf", "solver": "motor", "seconds": 120, "verdict": "TIMEOUT", "limit": 120}
+{"instance": "b86f2425cafeb1239d65bd529e372e02.cnf", "solver": "motor", "seconds": 120, "verdict": "TIMEOUT", "limit": 120}
+{"instance": "c0069efa0c924e416878d9426f1ef92e.cnf", "solver": "motor", "seconds": 120, "verdict": "TIMEOUT", "limit": 120}
+{"instance": "cd118ff851f95661b2a3adfc3e393c74.cnf", "solver": "motor", "seconds": 120, "verdict": "TIMEOUT", "limit": 120}
+{"instance": "dd169198070f9aa35015de65e8209a05.cnf", "solver": "motor", "seconds": 0.028, "verdict": "UNSAT", "limit": 120}
+{"instance": "cfc53adcc8ed18ca161bb6f8bc02b237.cnf", "solver": "motor", "seconds": 120, "verdict": "TIMEOUT", "limit": 120}
+{"instance": "d1f4348ad66cae01386777daae51c024.cnf", "solver": "motor", "seconds": 120, "verdict": "TIMEOUT", "limit": 120}
+{"instance": "d84a89fb1bc1ff37dc4737867257b290.cnf", "solver": "motor", "seconds": 120, "verdict": "TIMEOUT", "limit": 120}
+{"instance": "e46bdd62b3789b64f7fbb3bd6c99484e.cnf", "solver": "motor", "seconds": 120, "verdict": "TIMEOUT", "limit": 120}
+{"instance": "ed76b075cdf07435c6e4f6203dd10cb7.cnf", "solver": "motor", "seconds": 120, "verdict": "TIMEOUT", "limit": 120}
+{"instance": "fe19a31b76cbba5901e16ce36c7578ed.cnf", "solver": "motor", "seconds": 0.043, "verdict": "UNSAT", "limit": 120}
+{"instance": "f448874997bae64bd455fb00309dc738.cnf", "solver": "motor", "seconds": 71.414, "verdict": "SAT", "limit": 120, "model_ok": true}
+{"instance": "f08b3567642ea029452fff2c1d10c132.cnf", "solver": "motor", "seconds": 120, "verdict": "TIMEOUT", "limit": 120}
+{"instance": "fab0db1ab0dd5baa3215aab51ab69355.cnf", "solver": "motor", "seconds": 120, "verdict": "TIMEOUT", "limit": 120}
+{"instance": "008e7716c69009090ff6bd0048dc55f8.cnf", "solver": "motor-4h", "seconds": 37.297, "verdict": "UNSAT", "limit": 120}
+{"instance": "00f2eb377986e7decbc863931680a3b2.cnf", "solver": "motor-4h", "seconds": 0.034, "verdict": "UNSAT", "limit": 120}
+{"instance": "02066c116dbacc40ec5cca2067db26c0.cnf", "solver": "motor-4h", "seconds": 17.313, "verdict": "UNSAT", "limit": 120}
+{"instance": "037c423f56548082b1935e88c48ffdda.cnf", "solver": "motor-4h", "seconds": 0.054, "verdict": "SAT", "limit": 120, "model_ok": true}
+{"instance": "06b138e8a6da806e88ac7da2919cef30.cnf", "solver": "motor-4h", "seconds": 120, "verdict": "TIMEOUT", "limit": 120}
+{"instance": "0ae0c5a4fb9001d63669a0aa5b592167.cnf", "solver": "motor-4h", "seconds": 120, "verdict": "TIMEOUT", "limit": 120}
+{"instance": "1153a473e1d5dd21ccd33189d594a4aa.cnf", "solver": "motor-4h", "seconds": 120, "verdict": "TIMEOUT", "limit": 120}
+{"instance": "189e5991b041a89700513106988e720d.cnf", "solver": "motor-4h", "seconds": 120, "verdict": "TIMEOUT", "limit": 120}
+{"instance": "1a20649a8c79d6675d934cec271d573f.cnf", "solver": "motor-4h", "seconds": 120, "verdict": "TIMEOUT", "limit": 120}
+{"instance": "1aa7cd96ab1f7bf58984deccf8362ab4.cnf", "solver": "motor-4h", "seconds": 0.033, "verdict": "UNSAT", "limit": 120}
+{"instance": "1f215812371f0c428eb1f1e51f9f23d7.cnf", "solver": "motor-4h", "seconds": 120, "verdict": "TIMEOUT", "limit": 120}
+{"instance": "21bde0ebb111c637a1ae8789827b0b73.cnf", "solver": "motor-4h", "seconds": 0.119, "verdict": "UNSAT", "limit": 120}
+{"instance": "246afd75cb97a21144f368c00252a656.cnf", "solver": "motor-4h", "seconds": 0.024, "verdict": "UNSAT", "limit": 120}
+{"instance": "262009b8df6350761c7dfc8761f0af79.cnf", "solver": "motor-4h", "seconds": 120, "verdict": "TIMEOUT", "limit": 120}
+{"instance": "29bab0de14e56e526be9683131005cb2.cnf", "solver": "motor-4h", "seconds": 120, "verdict": "TIMEOUT", "limit": 120}
+{"instance": "2d0c041c0fe72dc32527bfbf34f63e61.cnf", "solver": "motor-4h", "seconds": 6.837, "verdict": "SAT", "limit": 120, "model_ok": true}
+{"instance": "328da7966b09b2f6e99c93c4e877fbff.cnf", "solver": "motor-4h", "seconds": 120, "verdict": "TIMEOUT", "limit": 120}
+{"instance": "37d40a1092b58ad28285b9453872d211.cnf", "solver": "motor-4h", "seconds": 0.024, "verdict": "UNSAT", "limit": 120}
+{"instance": "396245861b331d45e1345bd43fe352e2.cnf", "solver": "motor-4h", "seconds": 3.621, "verdict": "SAT", "limit": 120, "model_ok": true}
+{"instance": "4029fbae284eaf924b37b6f43d3a67fb.cnf", "solver": "motor-4h", "seconds": 0.117, "verdict": "UNSAT", "limit": 120}
+{"instance": "431bfb466be51ecd86b321b5cbce6d3c.cnf", "solver": "motor-4h", "seconds": 0.352, "verdict": "UNSAT", "limit": 120}
+{"instance": "44b249f51321a2bf38f730534b781bec.cnf", "solver": "motor-4h", "seconds": 0.066, "verdict": "SAT", "limit": 120, "model_ok": true}
+{"instance": "4d2f74ef97b6d40ebd71f85dcb75c543.cnf", "solver": "motor-4h", "seconds": 0.017, "verdict": "UNSAT", "limit": 120}
+{"instance": "4fe42891b004d7425631a8edb4252d3f.cnf", "solver": "motor-4h", "seconds": 120, "verdict": "TIMEOUT", "limit": 120}
+{"instance": "558ce551d2b933b7a5f1c7d2a6044930.cnf", "solver": "motor-4h", "seconds": 0.108, "verdict": "UNSAT", "limit": 120}
+{"instance": "587150fb7b12a6b5dd7e4a9446b9713b.cnf", "solver": "motor-4h", "seconds": 0.037, "verdict": "SAT", "limit": 120, "model_ok": true}
+{"instance": "63159b6b10c3d6832bd5944e05d78b11.cnf", "solver": "motor-4h", "seconds": 120, "verdict": "TIMEOUT", "limit": 120}
+{"instance": "6aacae96461cb65176942b6dc88ea470.cnf", "solver": "motor-4h", "seconds": 120, "verdict": "TIMEOUT", "limit": 120}
+{"instance": "711ff7681711949f44b07a0d530dc729.cnf", "solver": "motor-4h", "seconds": 92.551, "verdict": "UNSAT", "limit": 120}
+{"instance": "71cf538aa0751d27f144de9c8d82e458.cnf", "solver": "motor-4h", "seconds": 120, "verdict": "TIMEOUT", "limit": 120}
+{"instance": "751afd7ddf8f242ed7bd93517ba82149.cnf", "solver": "motor-4h", "seconds": 120, "verdict": "TIMEOUT", "limit": 120}
+{"instance": "7aaf3275cbe217044ef305f0a1ca8eb5.cnf", "solver": "motor-4h", "seconds": 0.054, "verdict": "UNSAT", "limit": 120}
+{"instance": "81d2158d506ea1049708837460b9387e.cnf", "solver": "motor-4h", "seconds": 120, "verdict": "TIMEOUT", "limit": 120}
+{"instance": "835ac60ca83af6f334b64b61c4ad345b.cnf", "solver": "motor-4h", "seconds": 0.014, "verdict": "UNSAT", "limit": 120}
+{"instance": "8bcd3f3e269fa3c9516667b626d61602.cnf", "solver": "motor-4h", "seconds": 120, "verdict": "TIMEOUT", "limit": 120}
+{"instance": "8d458780fb74c28c01a5fe89990ad521.cnf", "solver": "motor-4h", "seconds": 15.971, "verdict": "UNSAT", "limit": 120}
+{"instance": "91b88d172a08e2a57c189bddff51bfd5.cnf", "solver": "motor-4h", "seconds": 120, "verdict": "TIMEOUT", "limit": 120}
+{"instance": "953e9ff735bdf5ada27b0ab2b908b6af.cnf", "solver": "motor-4h", "seconds": 120, "verdict": "TIMEOUT", "limit": 120}
+{"instance": "96e01064ac3b644143278c21859e201f.cnf", "solver": "motor-4h", "seconds": 120, "verdict": "TIMEOUT", "limit": 120}
+{"instance": "9de6ddddf7fde06bf2efd955e2bd1a83.cnf", "solver": "motor-4h", "seconds": 120, "verdict": "TIMEOUT", "limit": 120}
+{"instance": "a18b6fbdfee43c007e07dedf15477797.cnf", "solver": "motor-4h", "seconds": 120, "verdict": "TIMEOUT", "limit": 120}
+{"instance": "a552a058e6376a36b1f1b2724f228364.cnf", "solver": "motor-4h", "seconds": 120, "verdict": "TIMEOUT", "limit": 120}
+{"instance": "a8dc92a9c0434576b47c82c94ab5c446.cnf", "solver": "motor-4h", "seconds": 120, "verdict": "TIMEOUT", "limit": 120}
+{"instance": "aa4a861240c0c39b5aa44602133ae5e1.cnf", "solver": "motor-4h", "seconds": 120, "verdict": "TIMEOUT", "limit": 120}
+{"instance": "af1e84bc2ab44d87d1c4c0cbf9e601c5.cnf", "solver": "motor-4h", "seconds": 0.033, "verdict": "UNSAT", "limit": 120}
+{"instance": "b2145c28dbed385329ea73a06d9c519a.cnf", "solver": "motor-4h", "seconds": 0.044, "verdict": "UNSAT", "limit": 120}
+{"instance": "b86f2425cafeb1239d65bd529e372e02.cnf", "solver": "motor-4h", "seconds": 120, "verdict": "TIMEOUT", "limit": 120}
+{"instance": "c0069efa0c924e416878d9426f1ef92e.cnf", "solver": "motor-4h", "seconds": 120, "verdict": "TIMEOUT", "limit": 120}
+{"instance": "c9af5b23c87350f5d817acc9ca7b69bb.cnf", "solver": "motor-4h", "seconds": 0.03, "verdict": "UNSAT", "limit": 120}
+{"instance": "cd118ff851f95661b2a3adfc3e393c74.cnf", "solver": "motor-4h", "seconds": 62.248, "verdict": "SAT", "limit": 120, "model_ok": true}
+{"instance": "cfc53adcc8ed18ca161bb6f8bc02b237.cnf", "solver": "motor-4h", "seconds": 34.105, "verdict": "UNSAT", "limit": 120}
+{"instance": "d1f4348ad66cae01386777daae51c024.cnf", "solver": "motor-4h", "seconds": 120, "verdict": "TIMEOUT", "limit": 120}
+{"instance": "d84a89fb1bc1ff37dc4737867257b290.cnf", "solver": "motor-4h", "seconds": 120, "verdict": "TIMEOUT", "limit": 120}
+{"instance": "dd169198070f9aa35015de65e8209a05.cnf", "solver": "motor-4h", "seconds": 0.026, "verdict": "UNSAT", "limit": 120}
+{"instance": "e46bdd62b3789b64f7fbb3bd6c99484e.cnf", "solver": "motor-4h", "seconds": 120, "verdict": "TIMEOUT", "limit": 120}
+{"instance": "ed76b075cdf07435c6e4f6203dd10cb7.cnf", "solver": "motor-4h", "seconds": 120, "verdict": "TIMEOUT", "limit": 120}
+{"instance": "f08b3567642ea029452fff2c1d10c132.cnf", "solver": "motor-4h", "seconds": 120, "verdict": "TIMEOUT", "limit": 120}
+{"instance": "f448874997bae64bd455fb00309dc738.cnf", "solver": "motor-4h", "seconds": 22.746, "verdict": "SAT", "limit": 120, "model_ok": true}
+{"instance": "fab0db1ab0dd5baa3215aab51ab69355.cnf", "solver": "motor-4h", "seconds": 120, "verdict": "TIMEOUT", "limit": 120}
+{"instance": "fe19a31b76cbba5901e16ce36c7578ed.cnf", "solver": "motor-4h", "seconds": 0.036, "verdict": "UNSAT", "limit": 120}

@@ -1,0 +1,320 @@
+{
+ "s": 5,
+ "t": 5,
+ "n": 43,
+ "d": 18,
+ "window": [
+  18,
+  24
+ ],
+ "k": 20,
+ "leaf_time": 60.0,
+ "seed": 41,
+ "population": 24,
+ "levels": [
+  [
+   1,
+   0.0,
+   1
+  ],
+  [
+   2,
+   1.0,
+   2
+  ],
+  [
+   3,
+   1.585,
+   3
+  ],
+  [
+   4,
+   2.3219,
+   5
+  ],
+  [
+   5,
+   2.8074,
+   7
+  ],
+  [
+   6,
+   3.3219,
+   10
+  ],
+  [
+   7,
+   4.0,
+   16
+  ],
+  [
+   8,
+   4.5236,
+   23
+  ],
+  [
+   9,
+   5.2095,
+   37
+  ],
+  [
+   10,
+   5.9099,
+   39
+  ],
+  [
+   11,
+   6.6103,
+   39
+  ],
+  [
+   12,
+   7.4177,
+   42
+  ],
+  [
+   13,
+   8.1903,
+   41
+  ],
+  [
+   14,
+   8.9272,
+   40
+  ],
+  [
+   15,
+   9.5902,
+   38
+  ],
+  [
+   16,
+   10.1752,
+   36
+  ],
+  [
+   17,
+   10.5902,
+   32
+  ],
+  [
+   18,
+   11.2532,
+   38
+  ],
+  [
+   19,
+   11.8381,
+   36
+  ],
+  [
+   20,
+   12.5751,
+   40
+  ]
+ ],
+ "leaves_est": 6101.560291965149,
+ "cost_s_est": 193616.51622955783,
+ "cost_is_lower_bound": true,
+ "mean_leaf_s": 31.732295833333335,
+ "mean_leaf_s_solved": 3.4645916666666667,
+ "outcomes": {
+  "UNSAT": 12,
+  "SAT": 0,
+  "TIMEOUT": 12
+ },
+ "rows": [
+  {
+   "log2w": 7.99,
+   "dec": 20,
+   "res": "UNSAT",
+   "secs": 0.625,
+   "conflicts": 182,
+   "branches": []
+  },
+  {
+   "log2w": 7.99,
+   "dec": 20,
+   "res": "UNSAT",
+   "secs": 0.8961,
+   "conflicts": 687,
+   "branches": []
+  },
+  {
+   "log2w": 7.99,
+   "dec": 20,
+   "res": "UNSAT",
+   "secs": 7.2208,
+   "conflicts": 6433,
+   "branches": []
+  },
+  {
+   "log2w": 7.99,
+   "dec": 20,
+   "res": "UNSAT",
+   "secs": 1.9775,
+   "conflicts": 3030,
+   "branches": []
+  },
+  {
+   "log2w": 7.99,
+   "dec": 20,
+   "res": "UNSAT",
+   "secs": 5.2461,
+   "conflicts": 5437,
+   "branches": []
+  },
+  {
+   "log2w": 7.99,
+   "dec": 20,
+   "res": "UNSAT",
+   "secs": 9.2064,
+   "conflicts": 9091,
+   "branches": []
+  },
+  {
+   "log2w": 7.99,
+   "dec": 20,
+   "res": "TIMEOUT",
+   "secs": 60.0002,
+   "conflicts": 77563,
+   "branches": []
+  },
+  {
+   "log2w": 7.99,
+   "dec": 20,
+   "res": "TIMEOUT",
+   "secs": 60.164,
+   "conflicts": 55456,
+   "branches": []
+  },
+  {
+   "log2w": 7.99,
+   "dec": 20,
+   "res": "TIMEOUT",
+   "secs": 60.0,
+   "conflicts": 33962,
+   "branches": []
+  },
+  {
+   "log2w": 7.99,
+   "dec": 20,
+   "res": "TIMEOUT",
+   "secs": 60.0247,
+   "conflicts": 119039,
+   "branches": []
+  },
+  {
+   "log2w": 7.99,
+   "dec": 20,
+   "res": "TIMEOUT",
+   "secs": 60.2808,
+   "conflicts": 37136,
+   "branches": []
+  },
+  {
+   "log2w": 7.99,
+   "dec": 20,
+   "res": "TIMEOUT",
+   "secs": 60.1445,
+   "conflicts": 37139,
+   "branches": []
+  },
+  {
+   "log2w": 7.99,
+   "dec": 20,
+   "res": "UNSAT",
+   "secs": 8.5407,
+   "conflicts": 3996,
+   "branches": []
+  },
+  {
+   "log2w": 7.99,
+   "dec": 20,
+   "res": "UNSAT",
+   "secs": 0.949,
+   "conflicts": 546,
+   "branches": []
+  },
+  {
+   "log2w": 7.99,
+   "dec": 20,
+   "res": "UNSAT",
+   "secs": 3.0052,
+   "conflicts": 3399,
+   "branches": []
+  },
+  {
+   "log2w": 7.99,
+   "dec": 20,
+   "res": "UNSAT",
+   "secs": 2.1519,
+   "conflicts": 2486,
+   "branches": []
+  },
+  {
+   "log2w": 7.99,
+   "dec": 20,
+   "res": "TIMEOUT",
+   "secs": 60.016,
+   "conflicts": 57029,
+   "branches": []
+  },
+  {
+   "log2w": 7.99,
+   "dec": 20,
+   "res": "TIMEOUT",
+   "secs": 60.1313,
+   "conflicts": 37126,
+   "branches": []
+  },
+  {
+   "log2w": 7.99,
+   "dec": 20,
+   "res": "UNSAT",
+   "secs": 0.9161,
+   "conflicts": 799,
+   "branches": []
+  },
+  {
+   "log2w": 7.99,
+   "dec": 20,
+   "res": "UNSAT",
+   "secs": 0.8403,
+   "conflicts": 389,
+   "branches": []
+  },
+  {
+   "log2w": 7.99,
+   "dec": 20,
+   "res": "TIMEOUT",
+   "secs": 60.1744,
+   "conflicts": 36014,
+   "branches": []
+  },
+  {
+   "log2w": 7.99,
+   "dec": 20,
+   "res": "TIMEOUT",
+   "secs": 60.0,
+   "conflicts": 40927,
+   "branches": []
+  },
+  {
+   "log2w": 7.99,
+   "dec": 20,
+   "res": "TIMEOUT",
+   "secs": 60.0095,
+   "conflicts": 46797,
+   "branches": []
+  },
+  {
+   "log2w": 7.99,
+   "dec": 20,
+   "res": "TIMEOUT",
+   "secs": 60.0,
+   "conflicts": 38970,
+   "branches": []
+  }
+ ]
+}

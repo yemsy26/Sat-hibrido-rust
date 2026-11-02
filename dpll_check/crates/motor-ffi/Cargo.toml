@@ -1,0 +1,13 @@
+[package]
+name = "motor-ffi"
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+description = "Interfaz en C del motor: motor_ffi.dll / libmotor_ffi.so e include/motor.h"
+
+[lib]
+name = "motor_ffi"
+crate-type = ["cdylib", "staticlib", "rlib"]
+
+[dependencies]
+dpll_check = { path = "../.." }

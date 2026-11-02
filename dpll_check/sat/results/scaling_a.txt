@@ -1,0 +1,103 @@
+  (3,6,18) classes d=0 w=(0, 17): UNSAT 0.309s lrat=True drat=True model_ok=None
+  (3,6,18) classes d=17 w=(0, 17): UNSAT 0.149s lrat=True drat=True model_ok=None
+  (3,6,18) classes d=1 w=(1, 16): UNSAT 0.621s lrat=True drat=True model_ok=None
+  (3,6,18) classes d=16 w=(1, 16): UNSAT 0.236s lrat=True drat=True model_ok=None
+  (3,6,18) classes d=2 w=(2, 15): UNSAT 0.299s lrat=True drat=True model_ok=None
+  (3,6,18) classes d=15 w=(2, 15): UNSAT 0.153s lrat=True drat=True model_ok=None
+  (3,6,18) classes d=3 w=(3, 14): UNSAT 0.603s lrat=True drat=True model_ok=None
+  (3,6,18) classes d=14 w=(3, 14): UNSAT 0.371s lrat=True drat=True model_ok=None
+  (3,6,18) classes d=4 w=(4, 13): UNSAT 0.354s lrat=True drat=True model_ok=None
+  (3,6,18) classes d=13 w=(4, 13): UNSAT 0.253s lrat=True drat=True model_ok=None
+  (3,6,18) classes d=5 w=(5, 12): UNSAT 0.306s lrat=True drat=True model_ok=None
+  (3,6,18) classes d=12 w=(5, 12): UNSAT 0.368s lrat=True drat=True model_ok=None
+  (3,6,18) classes d=6 w=(6, 11): UNSAT 0.181s lrat=True drat=True model_ok=None
+  (3,6,18) classes d=11 w=(6, 11): UNSAT 0.166s lrat=True drat=True model_ok=None
+  (3,6,18) classes d=7 w=(7, 10): UNSAT 0.123s lrat=True drat=True model_ok=None
+  (3,6,18) classes d=10 w=(7, 10): UNSAT 0.177s lrat=True drat=True model_ok=None
+  (3,6,18) classes d=8 w=(8, 9): UNSAT 0.197s lrat=True drat=True model_ok=None
+  (3,6,18) classes d=9 w=(8, 9): UNSAT 0.208s lrat=True drat=True model_ok=None
+(3,6,18) classes veredicto=UNSAT   esperado=UNSAT OK t=5.074s prueba=8149673B
+  (3,6,18) lemma d=4 w=(4, 5): UNSAT 0.255s lrat=True drat=True model_ok=None
+  (3,6,18) lemma d=5 w=(5, 5): UNSAT 0.265s lrat=True drat=True model_ok=None
+(3,6,18) lemma   veredicto=UNSAT   esperado=UNSAT OK t=0.52s prueba=1608966B
+  (3,6,17) classes d=0 w=(0, 16): UNSAT 0.138s lrat=True drat=True model_ok=None
+  (3,6,17) classes d=16 w=(0, 16): UNSAT 0.176s lrat=True drat=True model_ok=None
+  (3,6,17) classes d=1 w=(1, 15): UNSAT 0.316s lrat=True drat=True model_ok=None
+  (3,6,17) classes d=15 w=(1, 15): UNSAT 0.181s lrat=True drat=True model_ok=None
+  (3,6,17) classes d=2 w=(2, 14): UNSAT 0.273s lrat=True drat=True model_ok=None
+  (3,6,17) classes d=14 w=(2, 14): UNSAT 0.15s lrat=True drat=True model_ok=None
+  (3,6,17) classes d=3 w=(3, 13): UNSAT 0.733s lrat=True drat=True model_ok=None
+  (3,6,17) classes d=13 w=(3, 13): UNSAT 0.17s lrat=True drat=True model_ok=None
+  (3,6,17) classes d=4 w=(4, 12): SAT 0.173s lrat=None drat=None model_ok=True
+  (3,6,17) classes d=12 w=(4, 12): UNSAT 0.13s lrat=True drat=True model_ok=None
+  (3,6,17) classes d=5 w=(5, 11): UNSAT 0.732s lrat=True drat=True model_ok=None
+  (3,6,17) classes d=11 w=(5, 11): UNSAT 0.173s lrat=True drat=True model_ok=None
+  (3,6,17) classes d=6 w=(6, 10): UNSAT 0.105s lrat=True drat=True model_ok=None
+  (3,6,17) classes d=10 w=(6, 10): UNSAT 0.209s lrat=True drat=True model_ok=None
+  (3,6,17) classes d=7 w=(7, 9): UNSAT 0.136s lrat=True drat=True model_ok=None
+  (3,6,17) classes d=9 w=(7, 9): UNSAT 0.751s lrat=True drat=True model_ok=None
+  (3,6,17) classes d=8 w=(8, 8): UNSAT 0.346s lrat=True drat=True model_ok=None
+(3,6,17) classes veredicto=SAT     esperado=SAT   OK t=4.892s prueba=6727194B
+  (3,6,17) lemma d=3 w=(3, 5): UNSAT 0.627s lrat=True drat=True model_ok=None
+  (3,6,17) lemma d=4 w=(4, 5): SAT 0.172s lrat=None drat=None model_ok=True
+  (3,6,17) lemma d=5 w=(5, 5): UNSAT 0.839s lrat=True drat=True model_ok=None
+(3,6,17) lemma   veredicto=SAT     esperado=SAT   OK t=1.638s prueba=5058580B
+  (4,4,19) classes d=0 w=(0, 18): UNSAT 0.178s lrat=True drat=True model_ok=None
+  (4,4,19) classes d=1 w=(1, 17): UNSAT 0.262s lrat=True drat=True model_ok=None
+  (4,4,19) classes d=2 w=(2, 16): UNSAT 0.732s lrat=True drat=True model_ok=None
+  (4,4,19) classes d=3 w=(3, 15): UNSAT 0.377s lrat=True drat=True model_ok=None
+  (4,4,19) classes d=4 w=(4, 14): UNSAT 0.708s lrat=True drat=True model_ok=None
+  (4,4,19) classes d=5 w=(5, 13): UNSAT 0.511s lrat=True drat=True model_ok=None
+  (4,4,19) classes d=6 w=(6, 12): UNSAT 0.349s lrat=True drat=True model_ok=None
+  (4,4,19) classes d=7 w=(7, 11): UNSAT 0.224s lrat=True drat=True model_ok=None
+  (4,4,19) classes d=8 w=(8, 10): UNSAT 0.391s lrat=True drat=True model_ok=None
+(4,4,19) classes veredicto=UNSAT   esperado=UNSAT OK t=3.732s prueba=6708959B
+(4,4,19) lemma   veredicto=UNSAT   esperado=UNSAT OK t=0s prueba=0B (solo lema, 0 clases)
+  (4,4,20) classes d=0 w=(0, 19): UNSAT 0.365s lrat=True drat=True model_ok=None
+  (4,4,20) classes d=1 w=(1, 18): UNSAT 0.448s lrat=True drat=True model_ok=None
+  (4,4,20) classes d=2 w=(2, 17): UNSAT 0.44s lrat=True drat=True model_ok=None
+  (4,4,20) classes d=3 w=(3, 16): UNSAT 0.54s lrat=True drat=True model_ok=None
+  (4,4,20) classes d=4 w=(4, 15): UNSAT 0.668s lrat=True drat=True model_ok=None
+  (4,4,20) classes d=5 w=(5, 14): UNSAT 0.375s lrat=True drat=True model_ok=None
+  (4,4,20) classes d=6 w=(6, 13): UNSAT 0.593s lrat=True drat=True model_ok=None
+  (4,4,20) classes d=7 w=(7, 12): UNSAT 0.315s lrat=True drat=True model_ok=None
+  (4,4,20) classes d=8 w=(8, 11): UNSAT 0.496s lrat=True drat=True model_ok=None
+  (4,4,20) classes d=9 w=(9, 10): UNSAT 0.205s lrat=True drat=True model_ok=None
+(4,4,20) classes veredicto=UNSAT   esperado=UNSAT OK t=4.445s prueba=7137110B
+(4,4,20) lemma   veredicto=UNSAT   esperado=UNSAT OK t=0s prueba=0B (solo lema, 0 clases)
+  (3,3,7) classes d=0 w=(0, 6): UNSAT 0.072s lrat=True drat=True model_ok=None
+  (3,3,7) classes d=1 w=(1, 5): UNSAT 0.468s lrat=True drat=True model_ok=None
+  (3,3,7) classes d=2 w=(2, 4): UNSAT 0.502s lrat=True drat=True model_ok=None
+(3,3,7) classes veredicto=UNSAT   esperado=UNSAT OK t=1.042s prueba=266B
+(3,3,7) lemma   veredicto=UNSAT   esperado=UNSAT OK t=0s prueba=0B (solo lema, 0 clases)
+  (3,3,8) classes d=0 w=(0, 7): UNSAT 0.149s lrat=True drat=True model_ok=None
+  (3,3,8) classes d=1 w=(1, 6): UNSAT 0.099s lrat=True drat=True model_ok=None
+  (3,3,8) classes d=2 w=(2, 5): UNSAT 0.078s lrat=True drat=True model_ok=None
+  (3,3,8) classes d=3 w=(3, 4): UNSAT 0.06s lrat=True drat=True model_ok=None
+(3,3,8) classes veredicto=UNSAT   esperado=UNSAT OK t=0.386s prueba=373B
+(3,3,8) lemma   veredicto=UNSAT   esperado=UNSAT OK t=0s prueba=0B (solo lema, 0 clases)
+  (3,4,10) classes d=0 w=(0, 9): UNSAT 0.066s lrat=True drat=True model_ok=None
+  (3,4,10) classes d=9 w=(0, 9): UNSAT 0.049s lrat=True drat=True model_ok=None
+  (3,4,10) classes d=1 w=(1, 8): UNSAT 0.07s lrat=True drat=True model_ok=None
+  (3,4,10) classes d=8 w=(1, 8): UNSAT 0.116s lrat=True drat=True model_ok=None
+  (3,4,10) classes d=2 w=(2, 7): UNSAT 0.082s lrat=True drat=True model_ok=None
+  (3,4,10) classes d=7 w=(2, 7): UNSAT 0.08s lrat=True drat=True model_ok=None
+  (3,4,10) classes d=3 w=(3, 6): UNSAT 0.09s lrat=True drat=True model_ok=None
+  (3,4,10) classes d=6 w=(3, 6): UNSAT 0.142s lrat=True drat=True model_ok=None
+  (3,4,10) classes d=4 w=(4, 5): UNSAT 0.099s lrat=True drat=True model_ok=None
+  (3,4,10) classes d=5 w=(4, 5): UNSAT 0.132s lrat=True drat=True model_ok=None
+(3,4,10) classes veredicto=UNSAT   esperado=UNSAT OK t=0.926s prueba=44927B
+(3,4,10) lemma   veredicto=UNSAT   esperado=UNSAT OK t=0s prueba=0B (solo lema, 0 clases)
+  (3,4,11) classes d=0 w=(0, 10): UNSAT 0.102s lrat=True drat=True model_ok=None
+  (3,4,11) classes d=10 w=(0, 10): UNSAT 0.072s lrat=True drat=True model_ok=None
+  (3,4,11) classes d=1 w=(1, 9): UNSAT 0.083s lrat=True drat=True model_ok=None
+  (3,4,11) classes d=9 w=(1, 9): UNSAT 0.097s lrat=True drat=True model_ok=None
+  (3,4,11) classes d=2 w=(2, 8): UNSAT 0.066s lrat=True drat=True model_ok=None
+  (3,4,11) classes d=8 w=(2, 8): UNSAT 0.064s lrat=True drat=True model_ok=None
+  (3,4,11) classes d=3 w=(3, 7): UNSAT 0.068s lrat=True drat=True model_ok=None
+  (3,4,11) classes d=7 w=(3, 7): UNSAT 0.077s lrat=True drat=True model_ok=None
+  (3,4,11) classes d=4 w=(4, 6): UNSAT 0.099s lrat=True drat=True model_ok=None
+  (3,4,11) classes d=6 w=(4, 6): UNSAT 0.098s lrat=True drat=True model_ok=None
+(3,4,11) classes veredicto=UNSAT   esperado=UNSAT OK t=0.826s prueba=52066B
+(3,4,11) lemma   veredicto=UNSAT   esperado=UNSAT OK t=0s prueba=0B (solo lema, 0 clases)
+TODO OK

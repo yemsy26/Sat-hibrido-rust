@@ -1,0 +1,34 @@
+n=4 lex=root swap          clases=     6 esperado=     6 modelos_etiquetados=      6 OK
+n=4 lex=root sin swap      clases=    11 esperado=    11 modelos_etiquetados=     12 OK
+n=4 lex=root adyacente     clases=     6 esperado=     6 modelos_etiquetados=      6 OK
+n=4 lex=root card=seq      clases=     6 esperado=     6 modelos_etiquetados=      6 OK
+n=4 lex=full sin raiz      clases=    11 esperado=    11 modelos_etiquetados=     11 OK
+n=4 sin lex (referencia)   clases=     6 esperado=     6 modelos_etiquetados=     11 OK
+n=4 control negativo       clases=     4 esperado=     6 modelos_etiquetados=      4 OK (pierde clases)
+n=5 lex=root swap          clases=    18 esperado=    18 modelos_etiquetados=     22 OK
+n=5 lex=root sin swap      clases=    34 esperado=    34 modelos_etiquetados=     43 OK
+n=5 lex=root adyacente     clases=    18 esperado=    18 modelos_etiquetados=     22 OK
+n=5 lex=root card=seq      clases=    18 esperado=    18 modelos_etiquetados=     22 OK
+n=5 lex=full sin raiz      clases=    34 esperado=    34 modelos_etiquetados=     43 OK
+n=5 sin lex (referencia)   clases=    18 esperado=    18 modelos_etiquetados=    103 OK
+n=5 control negativo       clases=    11 esperado=    18 modelos_etiquetados=     11 OK (pierde clases)
+n=6 lex=root swap          clases=    78 esperado=    78 modelos_etiquetados=    119 OK
+n=6 lex=root sin swap      clases=   156 esperado=   156 modelos_etiquetados=    247 OK
+n=6 lex=root adyacente     clases=    78 esperado=    78 modelos_etiquetados=    122 OK
+n=6 lex=root card=seq      clases=    78 esperado=    78 modelos_etiquetados=    119 OK
+n=6 lex=full sin raiz      clases=   156 esperado=   156 modelos_etiquetados=    276 OK
+n=6 sin lex (referencia)   clases=    78 esperado=    78 modelos_etiquetados=   1857 OK
+n=6 control negativo       clases=    34 esperado=    78 modelos_etiquetados=     43 OK (pierde clases)
+n=7 lex=root swap          clases=   522 esperado=   522 modelos_etiquetados=   1088 OK
+n=7 lex=root sin swap      clases=  1044 esperado=  1044 modelos_etiquetados=   2383 OK
+n=7 lex=root adyacente     clases=   522 esperado=   522 modelos_etiquetados=   1143 OK
+n=7 lex=root card=seq      clases=   522 esperado=   522 modelos_etiquetados=   1088 OK
+n=7 lex=full sin raiz      clases=  1044 esperado=  1044 modelos_etiquetados=   3158 OK
+n=7 control negativo       clases=   156 esperado=   522 modelos_etiquetados=    276 OK (pierde clases)
+n=8 lex=root swap          clases=  6178 esperado=  6178 modelos_etiquetados=  17161 OK
+n=8 lex=root sin swap      clases= 12346 esperado= 12346 modelos_etiquetados=  41297 OK
+n=8 lex=root adyacente     clases=  6178 esperado=  6178 modelos_etiquetados=  18266 OK
+n=8 lex=root card=seq      clases=  6178 esperado=  6178 modelos_etiquetados=  17161 OK
+n=8 lex=full sin raiz      clases= 12346 esperado= 12346 modelos_etiquetados=  66595 OK
+n=8 control negativo       clases=  1044 esperado=  6178 modelos_etiquetados=   3158 OK (pierde clases)
+TODO OK

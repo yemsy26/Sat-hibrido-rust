@@ -1,0 +1,28 @@
+[
+ {
+  "s": 4,
+  "t": 5,
+  "n": 25,
+  "mode": "lemma",
+  "verdict": "UNKNOWN",
+  "by_lemma_only": false,
+  "expected": "UNSAT",
+  "total_solve_s": 3600.115,
+  "total_proof_bytes": 0,
+  "total_lemmas": 0,
+  "classes": [
+   {
+    "cnf": "r45_25_lemma_8.cnf",
+    "solve_s": 3600.115,
+    "result": "TIMEOUT",
+    "root_degree": 8,
+    "window": [
+     8,
+     13
+    ],
+    "vars": 6004,
+    "clauses": 92832
+   }
+  ]
+ }
+]

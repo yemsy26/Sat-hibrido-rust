@@ -1,0 +1,93 @@
+  (3,3,5) classes d=0 w=(0, 4): UNSAT 0.039s lrat=True drat=True model_ok=None
+  (3,3,5) classes d=1 w=(1, 3): UNSAT 0.027s lrat=True drat=True model_ok=None
+  (3,3,5) classes d=2 w=(2, 2): SAT 0.024s lrat=None drat=None model_ok=True
+(3,3,5) classes veredicto=SAT     esperado=SAT   OK t=0.09s prueba=153B
+  (3,3,5) plain d=None w=None: SAT 0.027s lrat=None drat=None model_ok=True
+(3,3,5) plain   veredicto=SAT     esperado=SAT   OK t=0.027s prueba=0B
+  (3,3,6) classes d=0 w=(0, 5): UNSAT 0.025s lrat=True drat=True model_ok=None
+  (3,3,6) classes d=1 w=(1, 4): UNSAT 0.023s lrat=True drat=True model_ok=None
+  (3,3,6) classes d=2 w=(2, 3): UNSAT 0.024s lrat=True drat=True model_ok=None
+(3,3,6) classes veredicto=UNSAT   esperado=UNSAT OK t=0.072s prueba=266B
+  (3,3,6) plain d=None w=None: UNSAT 0.027s lrat=True drat=True model_ok=None
+(3,3,6) plain   veredicto=UNSAT   esperado=UNSAT OK t=0.027s prueba=697B
+  (3,4,8) classes d=0 w=(0, 7): UNSAT 0.03s lrat=True drat=True model_ok=None
+  (3,4,8) classes d=7 w=(0, 7): UNSAT 0.03s lrat=True drat=True model_ok=None
+  (3,4,8) classes d=1 w=(1, 6): UNSAT 0.026s lrat=True drat=True model_ok=None
+  (3,4,8) classes d=6 w=(1, 6): UNSAT 0.025s lrat=True drat=True model_ok=None
+  (3,4,8) classes d=2 w=(2, 5): SAT 0.027s lrat=None drat=None model_ok=True
+  (3,4,8) classes d=5 w=(2, 5): UNSAT 0.023s lrat=True drat=True model_ok=None
+  (3,4,8) classes d=3 w=(3, 4): SAT 0.033s lrat=None drat=None model_ok=True
+  (3,4,8) classes d=4 w=(3, 4): UNSAT 0.023s lrat=True drat=True model_ok=None
+(3,4,8) classes veredicto=SAT     esperado=SAT   OK t=0.217s prueba=12742B
+  (3,4,8) plain d=None w=None: SAT 0.026s lrat=None drat=None model_ok=True
+(3,4,8) plain   veredicto=SAT     esperado=SAT   OK t=0.026s prueba=0B
+  (3,4,9) classes d=0 w=(0, 8): UNSAT 0.039s lrat=True drat=True model_ok=None
+  (3,4,9) classes d=8 w=(0, 8): UNSAT 0.023s lrat=True drat=True model_ok=None
+  (3,4,9) classes d=1 w=(1, 7): UNSAT 0.029s lrat=True drat=True model_ok=None
+  (3,4,9) classes d=7 w=(1, 7): UNSAT 0.027s lrat=True drat=True model_ok=None
+  (3,4,9) classes d=2 w=(2, 6): UNSAT 0.029s lrat=True drat=True model_ok=None
+  (3,4,9) classes d=6 w=(2, 6): UNSAT 0.029s lrat=True drat=True model_ok=None
+  (3,4,9) classes d=3 w=(3, 5): UNSAT 0.027s lrat=True drat=True model_ok=None
+  (3,4,9) classes d=5 w=(3, 5): UNSAT 0.024s lrat=True drat=True model_ok=None
+  (3,4,9) classes d=4 w=(4, 4): UNSAT 0.024s lrat=True drat=True model_ok=None
+(3,4,9) classes veredicto=UNSAT   esperado=UNSAT OK t=0.251s prueba=37555B
+  (3,4,9) plain d=None w=None: UNSAT 0.187s lrat=True drat=True model_ok=None
+(3,4,9) plain   veredicto=UNSAT   esperado=UNSAT OK t=0.187s prueba=974045B
+  (3,5,13) classes d=0 w=(0, 12): UNSAT 0.031s lrat=True drat=True model_ok=None
+  (3,5,13) classes d=12 w=(0, 12): UNSAT 0.027s lrat=True drat=True model_ok=None
+  (3,5,13) classes d=1 w=(1, 11): UNSAT 0.033s lrat=True drat=True model_ok=None
+  (3,5,13) classes d=11 w=(1, 11): UNSAT 0.032s lrat=True drat=True model_ok=None
+  (3,5,13) classes d=2 w=(2, 10): UNSAT 0.04s lrat=True drat=True model_ok=None
+  (3,5,13) classes d=10 w=(2, 10): UNSAT 0.031s lrat=True drat=True model_ok=None
+  (3,5,13) classes d=3 w=(3, 9): UNSAT 0.054s lrat=True drat=True model_ok=None
+  (3,5,13) classes d=9 w=(3, 9): UNSAT 0.026s lrat=True drat=True model_ok=None
+  (3,5,13) classes d=4 w=(4, 8): SAT 0.042s lrat=None drat=None model_ok=True
+  (3,5,13) classes d=8 w=(4, 8): UNSAT 0.028s lrat=True drat=True model_ok=None
+  (3,5,13) classes d=5 w=(5, 7): UNSAT 0.031s lrat=True drat=True model_ok=None
+  (3,5,13) classes d=7 w=(5, 7): UNSAT 0.033s lrat=True drat=True model_ok=None
+  (3,5,13) classes d=6 w=(6, 6): UNSAT 0.031s lrat=True drat=True model_ok=None
+(3,5,13) classes veredicto=SAT     esperado=SAT   OK t=0.439s prueba=276510B
+  (3,5,13) plain d=None w=None: SAT 0.03s lrat=None drat=None model_ok=True
+(3,5,13) plain   veredicto=SAT     esperado=SAT   OK t=0.03s prueba=0B
+  (3,5,14) classes d=0 w=(0, 13): UNSAT 0.031s lrat=True drat=True model_ok=None
+  (3,5,14) classes d=13 w=(0, 13): UNSAT 0.029s lrat=True drat=True model_ok=None
+  (3,5,14) classes d=1 w=(1, 12): UNSAT 0.039s lrat=True drat=True model_ok=None
+  (3,5,14) classes d=12 w=(1, 12): UNSAT 0.034s lrat=True drat=True model_ok=None
+  (3,5,14) classes d=2 w=(2, 11): UNSAT 0.062s lrat=True drat=True model_ok=None
+  (3,5,14) classes d=11 w=(2, 11): UNSAT 0.03s lrat=True drat=True model_ok=None
+  (3,5,14) classes d=3 w=(3, 10): UNSAT 0.059s lrat=True drat=True model_ok=None
+  (3,5,14) classes d=10 w=(3, 10): UNSAT 0.03s lrat=True drat=True model_ok=None
+  (3,5,14) classes d=4 w=(4, 9): UNSAT 0.052s lrat=True drat=True model_ok=None
+  (3,5,14) classes d=9 w=(4, 9): UNSAT 0.032s lrat=True drat=True model_ok=None
+  (3,5,14) classes d=5 w=(5, 8): UNSAT 0.028s lrat=True drat=True model_ok=None
+  (3,5,14) classes d=8 w=(5, 8): UNSAT 0.093s lrat=True drat=True model_ok=None
+  (3,5,14) classes d=6 w=(6, 7): UNSAT 0.036s lrat=True drat=True model_ok=None
+  (3,5,14) classes d=7 w=(6, 7): UNSAT 0.037s lrat=True drat=True model_ok=None
+(3,5,14) classes veredicto=UNSAT   esperado=UNSAT OK t=0.592s prueba=594445B
+  (3,5,14) plain d=None w=None: TIMEOUT 1200.081s lrat=None drat=None model_ok=None
+(3,5,14) plain   veredicto=UNKNOWN esperado=UNSAT NO t=1200.081s prueba=0B
+  (4,4,17) classes d=0 w=(0, 16): UNSAT 0.628s lrat=True drat=True model_ok=None
+  (4,4,17) classes d=1 w=(1, 15): UNSAT 0.256s lrat=True drat=True model_ok=None
+  (4,4,17) classes d=2 w=(2, 14): UNSAT 0.964s lrat=True drat=True model_ok=None
+  (4,4,17) classes d=3 w=(3, 13): UNSAT 0.599s lrat=True drat=True model_ok=None
+  (4,4,17) classes d=4 w=(4, 12): UNSAT 0.565s lrat=True drat=True model_ok=None
+  (4,4,17) classes d=5 w=(5, 11): UNSAT 0.893s lrat=True drat=True model_ok=None
+  (4,4,17) classes d=6 w=(6, 10): UNSAT 1.14s lrat=True drat=True model_ok=None
+  (4,4,17) classes d=7 w=(7, 9): UNSAT 0.431s lrat=True drat=True model_ok=None
+  (4,4,17) classes d=8 w=(8, 8): SAT 0.418s lrat=None drat=None model_ok=True
+(4,4,17) classes veredicto=SAT     esperado=SAT   OK t=5.894s prueba=6163661B
+  (4,4,17) plain d=None w=None: SAT 0.463s lrat=None drat=None model_ok=True
+(4,4,17) plain   veredicto=SAT     esperado=SAT   OK t=0.463s prueba=0B
+  (4,4,18) classes d=0 w=(0, 17): UNSAT 0.242s lrat=True drat=True model_ok=None
+  (4,4,18) classes d=1 w=(1, 16): UNSAT 0.4s lrat=True drat=True model_ok=None
+  (4,4,18) classes d=2 w=(2, 15): UNSAT 1.188s lrat=True drat=True model_ok=None
+  (4,4,18) classes d=3 w=(3, 14): UNSAT 0.515s lrat=True drat=True model_ok=None
+  (4,4,18) classes d=4 w=(4, 13): UNSAT 0.858s lrat=True drat=True model_ok=None
+  (4,4,18) classes d=5 w=(5, 12): UNSAT 0.635s lrat=True drat=True model_ok=None
+  (4,4,18) classes d=6 w=(6, 11): UNSAT 0.387s lrat=True drat=True model_ok=None
+  (4,4,18) classes d=7 w=(7, 10): UNSAT 0.299s lrat=True drat=True model_ok=None
+  (4,4,18) classes d=8 w=(8, 9): UNSAT 0.349s lrat=True drat=True model_ok=None
+(4,4,18) classes veredicto=UNSAT   esperado=UNSAT OK t=4.873s prueba=6144588B
+  (4,4,18) plain d=None w=None: TIMEOUT 1200.263s lrat=None drat=None model_ok=None
+(4,4,18) plain   veredicto=UNKNOWN esperado=UNSAT NO t=1200.263s prueba=0B
+incorrectos=0 sin_decidir=2 correctos_certificados=14

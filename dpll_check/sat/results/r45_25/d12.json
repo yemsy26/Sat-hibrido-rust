@@ -1,0 +1,28 @@
+[
+ {
+  "s": 4,
+  "t": 5,
+  "n": 25,
+  "mode": "lemma",
+  "verdict": "UNSAT-sin-prueba",
+  "by_lemma_only": false,
+  "expected": "UNSAT",
+  "total_solve_s": 47.415,
+  "total_proof_bytes": 0,
+  "total_lemmas": 0,
+  "classes": [
+   {
+    "cnf": "r45_25_lemma_12.cnf",
+    "solve_s": 47.415,
+    "result": "UNSAT",
+    "root_degree": 12,
+    "window": [
+     12,
+     12
+    ],
+    "vars": 5628,
+    "clauses": 91472
+   }
+  ]
+ }
+]
