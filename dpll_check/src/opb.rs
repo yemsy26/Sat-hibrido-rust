@@ -82,8 +82,9 @@ pub fn parse(text: &str) -> Result<Problem, String> {
             ">=" => problem.constraints.push(Constraint { terms, degree }),
             "<=" => problem.constraints.push(Constraint { terms: flip(&terms)?, degree: negative }),
             "=" => {
+                // Mismo orden que VeriPB 3.0 (`>=` primero, `<=` después) para que los IDs coincidan 1-a-1.
+                problem.constraints.push(Constraint { terms: terms.clone(), degree });
                 problem.constraints.push(Constraint { terms: flip(&terms)?, degree: negative });
-                problem.constraints.push(Constraint { terms, degree });
             }
             other => return Err(format!("Relacion no valida: {other}. Solo >=, <= y = sobre terminos lineales")),
         }
@@ -102,6 +103,27 @@ pub fn evaluate(terms: &[(i64, i32)], model: &[bool]) -> i128 {
 
 pub fn satisfies(problem: &Problem, model: &[bool]) -> bool {
     problem.constraints.iter().all(|constraint| evaluate(&constraint.terms, model) >= i128::from(constraint.degree))
+}
+
+/// Escribe un `opb::Problem` en formato OPB estándar (`>=`) para verificación directa con `veripb --opb`.
+pub fn write_opb(path: &std::path::Path, problem: &Problem) -> std::io::Result<()> {
+    use std::io::Write;
+    let mut out = std::io::BufWriter::new(std::fs::File::create(path)?);
+    writeln!(out, "* #variable= {} #constraint= {}", problem.variables, problem.constraints.len())?;
+    if let Some(obj) = &problem.objective {
+        write!(out, "min:")?;
+        for &(coeff, lit) in obj {
+            write!(out, " {coeff:+} {}x{}", if lit < 0 { "~" } else { "" }, lit.unsigned_abs())?;
+        }
+        writeln!(out, " ;")?;
+    }
+    for c in &problem.constraints {
+        for &(coeff, lit) in &c.terms {
+            write!(out, "{coeff:+} {}x{} ", if lit < 0 { "~" } else { "" }, lit.unsigned_abs())?;
+        }
+        writeln!(out, ">= {} ;", c.degree)?;
+    }
+    out.flush()
 }
 
 // Traductor a CNF. Las salidas de cada sumador quedan definidas en las dos direcciones.
@@ -172,24 +194,60 @@ impl Encoder {
         }
         bits
     }
-    fn constraint(&mut self, constraint: &Constraint) -> Result<(), String> {
+    fn constraint_i128(&mut self, terms_in: &[(i64, i32)], degree_in: i128, exact: bool) -> Result<(), String> {
         let overflow = || "Los coeficientes de una restriccion no caben en 127 bits".to_string();
-        let mut degree = i128::from(constraint.degree);
-        let mut terms: Vec<(u128, i32)> = Vec::with_capacity(constraint.terms.len());
+        let mut degree = degree_in;
+        let mut terms: Vec<(u128, i32)> = Vec::with_capacity(terms_in.len());
         let mut total: u128 = 0;
-        for &(coefficient, literal) in &constraint.terms {
+        for &(coefficient, literal) in terms_in {
             if coefficient == 0 {
                 continue;
             }
             // -a l = a (no l) - a
             let (magnitude, literal) = if coefficient < 0 {
-                degree -= i128::from(coefficient);
+                degree = degree.checked_sub(i128::from(coefficient)).ok_or_else(overflow)?;
                 (u128::from(coefficient.unsigned_abs()), -literal)
             } else {
                 (coefficient as u128, literal)
             };
             total = total.checked_add(magnitude).filter(|&sum| sum < 1 << 126).ok_or_else(overflow)?;
             terms.push((magnitude, literal));
+        }
+        if exact {
+            if degree < 0 || (degree as u128) > total {
+                self.formula.push(Vec::new());
+                return Ok(());
+            }
+            let target = degree as u128;
+            if target == 0 {
+                for &(_, lit) in &terms {
+                    self.formula.push(vec![-lit]);
+                }
+                return Ok(());
+            }
+            if target == total {
+                for &(_, lit) in &terms {
+                    self.formula.push(vec![lit]);
+                }
+                return Ok(());
+            }
+            // Igualdad con pesos unitarios: contador secuencial GAC compartido (AtLeast + AtMost).
+            if terms.iter().all(|&(m, _)| m == 1) && terms.len() <= 64 {
+                let k = target as usize;
+                let n = terms.len();
+                let lits: Vec<i32> = terms.iter().map(|&(_, l)| l).collect();
+                let neg: Vec<i32> = lits.iter().map(|&l| -l).collect();
+                if n * k <= 2048 && n * (n - k) <= 2048 {
+                    self.at_most_card(&lits, k);
+                    self.at_most_card(&neg, n - k);
+                    return Ok(());
+                }
+            }
+            // Un solo circuito sumador compartido para `>=` y `<=`.
+            let bits = self.sum_bits(&terms);
+            self.at_least(&bits, target);
+            self.at_most(&bits, target);
+            return Ok(());
         }
         if degree <= 0 {
             return Ok(());
@@ -203,9 +261,68 @@ impl Encoder {
             self.formula.push(terms.iter().map(|&(_, literal)| literal).collect());
             return Ok(());
         }
+        // Restricción de cardinalidad (todos los coeficientes 1): contador secuencial Sinz (GAC).
+        if terms.iter().all(|&(m, _)| m == 1) {
+            let n = terms.len();
+            let k = degree as usize;
+            if k == n {
+                for &(_, lit) in &terms {
+                    self.formula.push(vec![lit]);
+                }
+                return Ok(());
+            }
+            let max_false = n - k;
+            if n <= 64 && n * max_false <= 2048 {
+                let neg: Vec<i32> = terms.iter().map(|&(_, l)| -l).collect();
+                self.at_most_card(&neg, max_false);
+                return Ok(());
+            }
+        }
         let bits = self.sum_bits(&terms);
         self.at_least(&bits, degree);
         Ok(())
+    }
+    // Contador secuencial de Sinz: sum(lits) <= bound con arco-consistencia generalizada (GAC).
+    fn at_most_card(&mut self, lits: &[i32], bound: usize) {
+        let n = lits.len();
+        if bound >= n {
+            return;
+        }
+        if bound == 0 {
+            for &lit in lits {
+                self.formula.push(vec![-lit]);
+            }
+            return;
+        }
+        if bound == 1 && n <= 12 {
+            for i in 0..n {
+                for j in i + 1..n {
+                    self.formula.push(vec![-lits[i], -lits[j]]);
+                }
+            }
+            return;
+        }
+        // s[i][j]: al menos j+1 literales ciertos entre lits[0..=i].
+        let mut s = vec![vec![0_i32; bound]; n - 1];
+        for row in &mut s {
+            for slot in row {
+                *slot = self.fresh();
+            }
+        }
+        self.formula.push(vec![-lits[0], s[0][0]]);
+        for j in 1..bound {
+            self.formula.push(vec![-s[0][j]]);
+        }
+        for i in 1..n - 1 {
+            self.formula.push(vec![-lits[i], s[i][0]]);
+            self.formula.push(vec![-s[i - 1][0], s[i][0]]);
+            for j in 1..bound {
+                self.formula.push(vec![-lits[i], -s[i - 1][j - 1], s[i][j]]);
+                self.formula.push(vec![-s[i - 1][j], s[i][j]]);
+            }
+            self.formula.push(vec![-lits[i], -s[i - 1][bound - 1]]);
+        }
+        self.formula.push(vec![-lits[n - 1], -s[n - 2][bound - 1]]);
     }
     // suma >= k si y solo si, en cada bit a 1 de k, ese bit de la suma vale 1 o la suma tiene
     // un 1 mas arriba en un bit a 0 de k.
@@ -224,18 +341,111 @@ impl Encoder {
             self.formula.push(clause);
         }
     }
+    // suma <= bound si y solo si, en cada bit a 0 de bound, ese bit de la suma vale 0 o algun
+    // bit mas alto que vale 1 en bound vale 0 en la suma.
+    fn at_most(&mut self, bits: &[i32], bound: u128) {
+        at_most_clauses(bits, bound, &mut self.formula);
+    }
+    fn encode_constraints(&mut self, constraints: &[Constraint]) -> Result<(), String> {
+        let mut idx = 0;
+        while idx < constraints.len() {
+            let current = &constraints[idx];
+            // Detectar pares opuestos emitidos por `=` y compartir un único sumador.
+            let paired = constraints.get(idx + 1).is_some_and(|next| {
+                current.degree.checked_neg() == Some(next.degree)
+                    && current.terms.len() == next.terms.len()
+                    && current.terms.iter().zip(&next.terms).all(|(&(a, la), &(b, lb))| {
+                        la == lb && a.checked_neg() == Some(b)
+                    })
+            });
+            if paired {
+                self.constraint_i128(&current.terms, i128::from(current.degree), true)?;
+                idx += 2;
+            } else {
+                self.constraint_i128(&current.terms, i128::from(current.degree), false)?;
+                idx += 1;
+            }
+        }
+        Ok(())
+    }
+}
+
+pub fn at_most_clauses(bits: &[i32], bound: u128, out: &mut Formula) {
+    if bits.len() < 128 && bound >= (1_u128 << bits.len()) - 1 {
+        return;
+    }
+    for index in 0..bits.len() {
+        if bound >> index & 1 == 1 {
+            continue;
+        }
+        if bits[index] == 0 {
+            continue;
+        }
+        let mut clause = vec![-bits[index]];
+        for higher in index + 1..bits.len() {
+            if bound >> higher & 1 == 1 && bits[higher] != 0 {
+                clause.push(-bits[higher]);
+            }
+        }
+        out.push(clause);
+    }
+}
+
+/// Codificación incremental reutilizable de un problema OPB con objetivo `min:`.
+/// Permite apretar la cota superior añadiendo únicamente `at_most_clauses` sin re-codificar el sumador.
+pub struct EncodedObjective {
+    pub formula: Formula,
+    pub variables: u32,
+    pub objective_bits: Vec<i32>,
+    /// `coste(x) = sum(objective_bits) + offset`
+    pub offset: i128,
+}
+
+pub fn encode_incremental_objective(problem: &Problem) -> Result<EncodedObjective, String> {
+    let overflow = || "Los coeficientes del objetivo no caben en 127 bits".to_string();
+    let mut encoder = Encoder { next: problem.variables as i32 + 1, formula: Formula::new() };
+    encoder.encode_constraints(&problem.constraints)?;
+    let Some(objective) = &problem.objective else {
+        return Ok(EncodedObjective {
+            formula: encoder.formula,
+            variables: (encoder.next - 1) as u32,
+            objective_bits: Vec::new(),
+            offset: 0,
+        });
+    };
+    let mut offset: i128 = 0;
+    let mut terms: Vec<(u128, i32)> = Vec::with_capacity(objective.len());
+    let mut total: u128 = 0;
+    for &(coeff, lit) in objective {
+        if coeff == 0 {
+            continue;
+        }
+        let (mag, lit) = if coeff < 0 {
+            offset = offset.checked_add(i128::from(coeff)).ok_or_else(overflow)?;
+            (u128::from(coeff.unsigned_abs()), -lit)
+        } else {
+            (coeff as u128, lit)
+        };
+        total = total.checked_add(mag).filter(|&sum| sum < 1 << 126).ok_or_else(overflow)?;
+        terms.push((mag, lit));
+    }
+    let objective_bits = encoder.sum_bits(&terms);
+    Ok(EncodedObjective {
+        formula: encoder.formula,
+        variables: (encoder.next - 1) as u32,
+        objective_bits,
+        offset,
+    })
 }
 
 pub fn encode(problem: &Problem, bound: Option<i128>) -> Result<(Formula, u32), String> {
     let mut encoder = Encoder { next: problem.variables as i32 + 1, formula: Formula::new() };
-    for constraint in &problem.constraints {
-        encoder.constraint(constraint)?;
-    }
+    encoder.encode_constraints(&problem.constraints)?;
     if let (Some(objective), Some(bound)) = (&problem.objective, bound) {
-        // coste <= bound, como -coste >= -bound.
-        let degree = i64::try_from(-bound).map_err(|_| "Coste fuera de rango")?;
+        // coste <= bound, como -coste >= -bound (en i128 sin desbordar i64).
+        let degree = bound.checked_neg().ok_or("Coste fuera de rango")?;
         let terms: Option<Vec<(i64, i32)>> = objective.iter().map(|&(a, l)| a.checked_neg().map(|a| (a, l))).collect();
-        encoder.constraint(&Constraint { terms: terms.ok_or("Coeficiente fuera de rango")?, degree })?;
+        encoder.constraint_i128(&terms.ok_or("Coeficiente fuera de rango")?, degree, false)?;
     }
     Ok((encoder.formula, (encoder.next - 1) as u32))
 }

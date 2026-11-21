@@ -4,6 +4,7 @@
 // `unsafe` en una sola funcion, la que lanza el nucleo CUDA.
 #![deny(unsafe_code)]
 
+pub mod cutting_planes;
 pub mod dimacs;
 pub mod gen_erdos;
 pub mod gen_ramsey;

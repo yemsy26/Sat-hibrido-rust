@@ -32,10 +32,15 @@ fn read_all(mut pipe: impl Read + Send + 'static) -> std::thread::JoinHandle<Str
     })
 }
 
-// `stop` corta la comprobacion: mata a VeriPB y no da veredicto.
-pub fn check_unsat_proof(cnf: &Path, proof: &Path, stop: Option<&AtomicBool>) -> Result<ProofCheck, String> {
+fn run_veripb(
+    mode_flag: &str,
+    input: &Path,
+    proof: &Path,
+    accepted: &str,
+    stop: Option<&AtomicBool>,
+) -> Result<ProofCheck, String> {
     let mut child = Command::new(VERIFIER)
-        .arg("--cnf").arg(cnf).arg(proof)
+        .arg(mode_flag).arg(input).arg(proof)
         .stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped())
         .spawn()
         .map_err(|error| format!("No se pudo ejecutar {VERIFIER}: {error}"))?;
@@ -53,9 +58,30 @@ pub fn check_unsat_proof(cnf: &Path, proof: &Path, stop: Option<&AtomicBool>) ->
         std::thread::sleep(Duration::from_millis(20));
     };
     let (stdout, stderr) = (stdout.join().unwrap_or_default(), stderr.join().unwrap_or_default());
-    if status.success() && stdout.lines().chain(stderr.lines()).any(|line| line.trim() == ACCEPTED) {
+    if status.success() && stdout.lines().chain(stderr.lines()).any(|line| line.trim() == accepted) {
         return Ok(ProofCheck::Verified);
     }
     let last = stdout.lines().chain(stderr.lines()).filter(|line| !line.trim().is_empty()).last().unwrap_or("sin salida");
     Ok(ProofCheck::Rejected(format!("{status}: {last}")))
+}
+
+// `stop` corta la comprobacion: mata a VeriPB y no da veredicto.
+pub fn check_unsat_proof(cnf: &Path, proof: &Path, stop: Option<&AtomicBool>) -> Result<ProofCheck, String> {
+    run_veripb("--cnf", cnf, proof, ACCEPTED, stop)
+}
+
+/// Comprueba una prueba VeriPB 3.0.2 nativa directamente contra un fichero `.opb`.
+pub fn check_opb_proof(
+    opb: &Path,
+    proof: &Path,
+    expected_optimum: Option<i128>,
+    has_objective: bool,
+    stop: Option<&AtomicBool>,
+) -> Result<ProofCheck, String> {
+    let accepted = match (has_objective, expected_optimum) {
+        (false, _) => ACCEPTED.to_string(),
+        (true, None) => "s VERIFIED BOUNDS INF <= obj <= INF".to_string(),
+        (true, Some(cost)) => format!("s VERIFIED BOUNDS {cost} <= obj <= {cost}"),
+    };
+    run_veripb("--opb", opb, proof, &accepted, stop)
 }

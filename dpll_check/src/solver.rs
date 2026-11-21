@@ -25,6 +25,7 @@ use crate::dimacs::{parse_dimacs, write_dimacs, Formula};
 use crate::hybrid::cdcl::{CubeFilter, RecubeConfig, SwarmConfig, SwarmProgress};
 use crate::hybrid::proof::PbProof;
 use crate::hybrid::{self, verify_model, HybridConfig, CongruenceStats, ParityStats, SolveStats, SymmetryStats};
+use crate::cutting_planes::{self, CpOutcome, OpbProofWriter};
 use crate::opb;
 use crate::verifier::{self, ProofCheck};
 use chronos_vfs::{RingWriter, ZstdConfig, ZstdSink};
@@ -582,7 +583,9 @@ fn run(problem: &Problem, options: &Options, mut extras: Extras<'_>) -> Result<S
         }
         let result = match &problem.instance {
             Instance::Cnf(formula) => run_cnf(formula, problem.file.as_deref(), &context, extras),
-            Instance::Pb(instance) if extras.filter.is_none() && extras.recube.is_none() => run_pb(instance, &context),
+            Instance::Pb(instance) if extras.filter.is_none() && extras.recube.is_none() => {
+                run_pb(instance, problem.file.as_deref(), &context)
+            }
             Instance::Pb(_) => invalid("recubing y el prefiltro no admiten un .opb"),
         };
         drop(done);
@@ -786,8 +789,162 @@ fn signed(problem: &opb::Problem, model: &[bool]) -> Vec<i32> {
     (1..=problem.variables as i32).map(|id| if model.get(id as usize).copied().unwrap_or(false) { id } else { -id }).collect()
 }
 
-fn run_pb(problem: &opb::Problem, context: &Context<'_>) -> Result<Solution, SolveError> {
+fn run_pb_cutting_planes(
+    problem: &opb::Problem,
+    file: Option<&Path>,
+    context: &Context<'_>,
+) -> Result<Solution, SolveError> {
     let options = context.options;
+    let mut stats = Stats { variables: problem.variables, clauses: problem.constraints.len(), ..Stats::default() };
+    let workspace = Workspace::create()?;
+    let compressed = options.proof.as_ref().is_some_and(|p| p.extension().is_some_and(|e| e == "zst"));
+    let trace = workspace.0.join(if compressed { "f.pbp.zst" } else { "f.pbp" });
+    let wants_trace = context.certify || options.proof.is_some();
+    let objective = problem.objective.is_some();
+    let mut improved_cb = |cost: i128| {
+        if let Some(handler) = &options.on_event {
+            handler(&Event::Improved { cost });
+        }
+    };
+    let (outcome, cp_stats) = if wants_trace {
+        let sink = Meter {
+            sink: TraceFile::create(&trace).map_err(at_path(&trace))?,
+            gauge: Arc::clone(&context.gauge),
+            cap: context.cap,
+        };
+        let mut writer = OpbProofWriter::new(sink, problem.constraints.len());
+        let (outcome, cp_stats) = cutting_planes::solve_opb(
+            problem,
+            Some(&mut writer),
+            Some(&context.progress.stop),
+            Some(&mut improved_cb),
+        );
+        let (refuted, opt_cost) = match &outcome {
+            CpOutcome::Unsat => (true, None),
+            CpOutcome::Optimum { cost, .. } => (true, Some(*cost)),
+            _ => (false, None),
+        };
+        let meter = writer.finish(objective, opt_cost, refuted).map_err(at_path(&trace))?;
+        meter.sink.close().map_err(at_path(&trace))?;
+        (outcome, cp_stats)
+    } else {
+        cutting_planes::solve_opb::<Vec<u8>>(
+            problem,
+            None,
+            Some(&context.progress.stop),
+            Some(&mut improved_cb),
+        )
+    };
+    stats.passes = 1;
+    stats.search.conflicts = cp_stats.conflicts as usize;
+    stats.search.decisions = cp_stats.decisions as usize;
+    stats.search.restarts = cp_stats.restarts as usize;
+    stats.search.deleted_clauses = cp_stats.deleted as usize;
+    stats.trace_lines = cp_stats.proof_lines;
+    stats.trace_bytes = context.gauge.bytes.load(Ordering::Relaxed);
+    stats.trace_truncated = context.gauge.truncated.load(Ordering::Relaxed);
+
+    let (best, refuted, stopped) = match outcome {
+        CpOutcome::Sat(model) => {
+            if !opb::satisfies(problem, &model) {
+                let halt = Halt::Rejected("el modelo no cumple las restricciones del fichero".into());
+                return Ok(context.finish(stats, Status::Unknown, Some(halt)));
+            }
+            (Some((signed(problem, &model), 0)), false, false)
+        }
+        CpOutcome::Unsat => (None, true, false),
+        CpOutcome::Optimum { model, cost } => {
+            if !opb::satisfies(problem, &model) {
+                let halt = Halt::Rejected("el modelo optimo no cumple las restricciones del fichero".into());
+                return Ok(context.finish(stats, Status::Unknown, Some(halt)));
+            }
+            (Some((signed(problem, &model), cost)), true, false)
+        }
+        CpOutcome::Stopped { best } => {
+            let best_signed = best.and_then(|(m, c)| opb::satisfies(problem, &m).then(|| (signed(problem, &m), c)));
+            (best_signed, false, true)
+        }
+    };
+    if stopped {
+        let mut solution = context.finish(stats, if best.is_some() { Status::Sat } else { Status::Unknown }, Some(context.halt()));
+        if let Some((model, cost)) = best {
+            solution.model = Some(model);
+            solution.cost = objective.then_some(cost);
+            solution.model_checked = true;
+        }
+        return Ok(solution);
+    }
+    if refuted && context.certify {
+        if context.gauge.truncated.load(Ordering::Relaxed) {
+            let halt = Halt::Rejected("la traza llego a su tope y no certifica nada; sube proof_cap (--proof-cap-gib)".into());
+            let mut solution = context.finish(stats, if best.is_some() { Status::Sat } else { Status::Unknown }, Some(halt));
+            if let Some((model, cost)) = best {
+                solution.model = Some(model);
+                solution.cost = objective.then_some(cost);
+                solution.model_checked = true;
+            }
+            return Ok(solution);
+        }
+        let opb_copy = workspace.0.join("f.opb");
+        let opb_path = match file {
+            Some(path) => path,
+            None => {
+                opb::write_opb(&opb_copy, problem).map_err(at_path(&opb_copy))?;
+                &opb_copy
+            }
+        };
+        let expected_opt = best.as_ref().map(|&(_, c)| c);
+        match verifier::check_opb_proof(opb_path, &trace, expected_opt, objective, Some(&context.progress.stop))
+            .map_err(SolveError::Verifier)?
+        {
+            ProofCheck::Verified => {}
+            ProofCheck::Rejected(reason) => {
+                let halt = Halt::Rejected(format!("VeriPB rechazo la prueba OPB ({reason})"));
+                let mut solution = context.finish(stats, if best.is_some() { Status::Sat } else { Status::Unknown }, Some(halt));
+                if let Some((model, cost)) = best {
+                    solution.model = Some(model);
+                    solution.cost = objective.then_some(cost);
+                    solution.model_checked = true;
+                }
+                return Ok(solution);
+            }
+            ProofCheck::Stopped => {
+                let mut solution = context.finish(stats, if best.is_some() { Status::Sat } else { Status::Unknown }, Some(context.halt()));
+                if let Some((model, cost)) = best {
+                    solution.model = Some(model);
+                    solution.cost = objective.then_some(cost);
+                    solution.model_checked = true;
+                }
+                return Ok(solution);
+            }
+        }
+    }
+    let status = match (&best, refuted) {
+        (None, _) => Status::Unsat,
+        (Some(_), false) => Status::Sat,
+        (Some(_), true) => Status::Optimum,
+    };
+    let mut solution = context.finish(stats, status, None);
+    solution.proof_checked = refuted && context.certify;
+    if let Some(kept) = options.proof.as_ref().filter(|_| wants_trace) {
+        std::fs::copy(&trace, kept).map_err(at_path(kept))?;
+        solution.proof = Some(kept.clone());
+    }
+    if let Some((model, cost)) = best {
+        solution.model = Some(model);
+        solution.cost = objective.then_some(cost);
+        solution.model_checked = true;
+    }
+    Ok(solution)
+}
+
+fn run_pb(problem: &opb::Problem, file: Option<&Path>, context: &Context<'_>) -> Result<Solution, SolveError> {
+    let options = context.options;
+    // Sin `--cnf`, resolvemos y certificamos OPB directamente con Planos de Corte + `veripb --opb`
+    // (sin bit-blasting y sin el traductor CNF en la base de confianza).
+    if options.cnf.is_none() {
+        return run_pb_cutting_planes(problem, file, context);
+    }
     let mut stats = Stats { variables: problem.variables, clauses: problem.constraints.len(), ..Stats::default() };
     let workspace = Workspace::create()?;
     let cnf = workspace.0.join("f.cnf");
