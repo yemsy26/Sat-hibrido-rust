@@ -74,9 +74,11 @@ queda certificado y se avisa. Cómo instalar VeriPB: [`dpll_check/README.md`](dp
 
 ## Versiones publicadas
 
-- [`v0.2.2`](https://github.com/yemsy26/Sat-hibrido-rust/releases/tag/v0.2.2): la versión actual.
-- [`v0.2.1`](https://github.com/yemsy26/Sat-hibrido-rust/releases/tag/v0.2.1): los mismos archivos, con este número
-  para [Aura Sentinel](https://github.com/yemsy26/aura-sentinel) 4.11.1, que descarga esa versión.
+- [`v0.2.3`](https://github.com/yemsy26/Sat-hibrido-rust/releases/tag/v0.2.3): la versión actual. Un `.opb` se
+  resuelve por planos de corte y VeriPB lo comprueba contra el propio `.opb`; el CNF no cambia.
+- [`v0.2.2`](https://github.com/yemsy26/Sat-hibrido-rust/releases/tag/v0.2.2): el `.opb` se traduce a CNF.
+- [`v0.2.1`](https://github.com/yemsy26/Sat-hibrido-rust/releases/tag/v0.2.1): los mismos archivos que la `v0.2.2`, con este
+  número para [Aura Sentinel](https://github.com/yemsy26/aura-sentinel) de la 4.11.1 a la 4.13.13, que descargan esa versión.
 
 ## Licencia
 
