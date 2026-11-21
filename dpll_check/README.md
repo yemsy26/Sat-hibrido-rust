@@ -76,7 +76,9 @@ ya pide Rust 1.92.
 
 `motor solve` sigue siempre el mismo recorrido:
 
-1. **Lectura.** Carga el DIMACS. Un `.opb` se traduce antes a CNF con un sumador binario.
+1. **Lectura.** Carga el DIMACS. Un `.opb` se salta los pasos 2 a 4: lo resuelve su propio solver de
+   planos de corte (`src/cutting_planes.rs`, en un solo hilo), con su traza y su comprobación contra el
+   `.opb` original. Solo con `--cnf` se traduce antes a CNF con un sumador binario y sigue el recorrido entero.
 2. **Simetrías.** Busca automorfismos de la fórmula y añade restricciones lex-leader que eliminan las
    soluciones equivalentes. Cada una se justifica en la traza con la regla de dominancia.
 3. **Paridad.** Extrae las ecuaciones XOR ocultas y las reduce por eliminación gaussiana, algo que
@@ -93,7 +95,7 @@ ya pide Rust 1.92.
    acepta la traza. Si la rechaza, el resultado se descarta.
 
 Por eso un error del solver puede dar un `s UNKNOWN`, pero no un UNSAT certificado falso. Lo que queda
-dentro de lo que hay que creer es VeriPB y, en los `.opb`, el traductor a CNF (ver abajo).
+dentro de lo que hay que creer es VeriPB y, en un `.opb` con `--cnf`, el traductor a CNF (ver abajo).
 
 ## Uso
 
@@ -131,10 +133,13 @@ min: +3 x1 +2 x2 +4 x3 ;
 +2 x1 -1 ~x3 <= 1 ;
 ```
 
-Sale `o <coste>` por cada mejora y `s OPTIMUM FOUND` al final. Admite `--workers`, `--json`, `--cnf`
-para conservar la última CNF y `--proof` para conservar su traza. Una refutación pasa por VeriPB, pero
-**sobre la CNF traducida**: el traductor no está certificado y hay que creerlo; `tests/motor_opb.rs` lo
-compara con la fuerza bruta. Los términos no lineales (`+1 x1 x2`) se rechazan.
+Sale `o <coste>` por cada mejora y `s OPTIMUM FOUND` al final. Admite `--json` y `--proof` para
+conservar su traza. Por defecto lo resuelve el solver de planos de corte, en un solo hilo, y VeriPB
+(`veripb --opb`) comprueba la prueba **contra el `.opb` original**, sin traductor de por medio.
+`--cnf F` lo traduce a CNF con un sumador binario, conserva esa CNF y usa el recorrido de arriba (admite
+`--workers`); entonces VeriPB comprueba la **CNF traducida**: el traductor no está certificado y hay que
+creerlo, y `tests/motor_opb.rs` lo compara con la fuerza bruta. Los términos no lineales (`+1 x1 x2`)
+se rechazan.
 
 ## Integrarlo en otro programa
 
@@ -142,7 +147,8 @@ Las tres vías hacen el mismo recorrido y dan la misma garantía:
 
 * `Sat` y `Optimum` traen un modelo ya evaluado contra el problema.
 * `Unsat` y `Optimum` los ha aceptado VeriPB si `proof_checked` es cierto; con `certify` desactivado es
-  falso y hay que creer al solver. En un `.opb`, VeriPB comprueba la CNF traducida.
+  falso y hay que creer al solver. En un `.opb`, VeriPB comprueba la prueba contra el propio `.opb`; con
+  `--cnf`, la CNF traducida.
 * Un límite de tiempo, una parada o una prueba rechazada nunca salen como `Unsat`.
 
 Para certificar hace falta VeriPB también aquí: es un proceso aparte que la biblioteca lanza por ti. Sin
@@ -326,6 +332,7 @@ hace falta para probar otra.
 | `src/hybrid*.rs` | Solver: simetría, paridad, congruencia, CDCL, enjambre y trazas |
 | [`src/verifier.rs`](src/verifier.rs) | Lanza VeriPB y lee su veredicto |
 | [`src/opb.rs`](src/opb.rs) | Formato `.opb` y traductor a CNF |
+| [`src/cutting_planes.rs`](src/cutting_planes.rs) | Solver de planos de corte para `.opb`, con su prueba VeriPB |
 | `src/k43.rs`, `src/ramsey43_*`, `src/*.cu*` | Motor GPU de K43 |
 | [`src/ramsey_ref.rs`](src/ramsey_ref.rs), [`src/ramsey_bench.rs`](src/ramsey_bench.rs) | Referencia en CPU de la búsqueda GPU y su banco ([resultados](results/validacion_ramsey.md)) |
 | `src/bin/certify.rs`, `src/bin/parity_stress.rs` | Herramientas de medición: escribir una traza sin comprobarla y forzar la capa de paridad |
